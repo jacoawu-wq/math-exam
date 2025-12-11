@@ -43,7 +43,7 @@ if HAS_MATPLOTLIB and os.path.exists(font_path):
 # ==========================================
 
 def get_ai_variation(image_file, api_key, model_name):
-    """使用 Google Gemini Vision 模型分析圖片 (含安全設定與重試機制)"""
+    """使用 Google Gemini Vision 模型分析圖片 (含安全設定與強效重試機制)"""
     if not HAS_GENAI: return None, "缺少 AI 套件"
     if not api_key: return None, "未輸入 API Key"
     
@@ -66,7 +66,6 @@ def get_ai_variation(image_file, api_key, model_name):
         [題目] ... [答案] ... [解析] ... [繪圖程式碼] ...
         """
         
-        # 設定安全過濾器為「不阻擋」，避免誤判導致 Invalid Operation
         safety_settings = {
             HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -74,24 +73,26 @@ def get_ai_variation(image_file, api_key, model_name):
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
         
-        # 簡單的重試機制，處理 429 錯誤
+        # [關鍵修正] 遞增式重試機制，專門對付 429 錯誤
         max_retries = 3
         for attempt in range(max_retries + 1):
             try:
                 response = model.generate_content([prompt, img], safety_settings=safety_settings)
-                break # 成功則跳出迴圈
+                break # 成功則跳出
             except Exception as e:
                 if "429" in str(e):
                     if attempt < max_retries:
-                        time.sleep(5) # 遇到 429 錯誤，休息 5 秒後重試
+                        # 第一次等 10秒, 第二次 20秒, 第三次 30秒
+                        wait_time = (attempt + 1) * 10
+                        time.sleep(wait_time) 
                         continue
                     else:
-                        return None, "API 額度已滿 (429)，請稍後再試。"
+                        return None, "API 額度已滿 (429)，請稍後再試或更換 API Key。"
                 else:
-                    raise e # 其他錯誤直接拋出
+                    raise e
 
         if not response.candidates:
-            return None, "AI 拒絕回答 (可能觸發安全機制或無內容)。"
+            return None, "AI 拒絕回答 (可能觸發安全機制)。"
             
         candidate = response.candidates[0]
         if candidate.finish_reason.name != "STOP":
@@ -346,7 +347,11 @@ def main():
                 for idx, img_file in enumerate(uploaded_files):
                     status_text.text(f"🤖 AI 分析第 {idx+1}/{len(uploaded_files)} 題...")
                     
-                    time.sleep(2) # 基礎緩衝
+                    # [關鍵修正] 增加基礎緩衝時間至 10 秒
+                    if idx > 0:
+                        with st.spinner(f"為避免超過免費額度，冷卻 10 秒中..."):
+                            time.sleep(10)
+                    
                     ai_text, error = get_ai_variation(img_file, api_key, selected_model)
                     
                     if error:
