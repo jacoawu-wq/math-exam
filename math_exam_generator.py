@@ -85,130 +85,250 @@ def generate_geometry_basic():
     return {"topic": "基礎-幾何圖形", "question": q_str, "answer": ans_str, "detail": detail}
 
 # ==========================================
-# Part 2: 進階歷屆試題改編 (Advanced Exam Styles)
+# Part 2: 進階歷屆試題改編 (Advanced Exam Styles - Multi-Scenario)
 # ==========================================
 
-def generate_exam_ticket_problem():
-    """試題改編：門票/費用優惠問題 (一元一次不等式應用)"""
-    # 題目模版：團體票問題
-    # 假設原價 p 元，超過 n 人打 d 折
-    price = random.choice([100, 200, 250, 300, 500])
-    group_limit = random.choice([20, 30, 40, 50])
-    discount_off = random.choice([10, 20, 30]) # 10% off = 9折
-    discount_rate = (100 - discount_off) / 100
+def generate_advanced_inequality():
+    """進階-生活應用(不等式)：隨機選擇不同場景"""
+    scenario = random.choice(['ticket', 'mobile_plan', 'saving_goal'])
     
-    # 設計人數 x，使得「買團體票」比「按人數買」便宜
-    # 買團體票價格 = price * group_limit * discount_rate
-    # 按人數買價格 = price * x
-    # 臨界點： x * price > price * group_limit * discount_rate  => x > group_limit * discount_rate
-    
-    threshold = math.ceil(group_limit * discount_rate)
-    # 讓 x 在臨界點附近，增加混淆
-    x_options = [threshold - 2, threshold - 1, threshold + 1, threshold + 2]
-    x_val = random.choice(x_options)
-    
-    q_str = (f"某遊樂園門票每張 {price} 元，團體 {group_limit} 人以上(含)可享 {10-discount_off//10} 折優惠。"
-             f"若一個不足 {group_limit} 人的團體，人數至少多少人時，直接購買 {group_limit} 張團體票反而比較划算？")
-    
-    ans_str = f"{threshold} 人"
-    detail = (f"設人數為 $x$。若買團體票較便宜：\n"
-              f"${price} \\times x > {price} \\times {group_limit} \\times {discount_rate}$ \n"
-              f"$\\Rightarrow x > {group_limit * discount_rate}$，故至少 {threshold} 人。")
-    
-    return {"topic": "🔥 進階-生活應用(不等式)", "question": q_str, "answer": ans_str, "detail": detail}
-
-def generate_exam_sequence_pattern():
-    """試題改編：圖形與規律 (等差數列應用)"""
-    # 題目模版：火柴棒/排座椅問題
-    # 假設第 1 圖需 a 根，每多一圖加 d 根
-    # 常見：正方形排列 (4, 7, 10...) -> a=4, d=3
-    # 常見：三角形排列 (3, 5, 7...) -> a=3, d=2
-    pattern_type = random.choice(['square', 'tri'])
-    
-    if pattern_type == 'square':
-        shape_name = "正方形"
-        a1 = 4
-        d = 3
-    else:
-        shape_name = "三角形"
-        a1 = 3
-        d = 2
+    if scenario == 'ticket':
+        # 情境 A: 門票優惠 (原版)
+        price = random.choice([100, 200, 250, 300, 500])
+        group_limit = random.choice([20, 30, 40, 50])
+        discount_off = random.choice([10, 20, 30]) 
+        discount_rate = (100 - discount_off) / 100
+        threshold = math.ceil(group_limit * discount_rate)
         
-    n = random.randint(10, 50)
-    q_str = (f"利用火柴棒排列相連的{shape_name}，排 1 個需 {a1} 根，排 2 個需 {a1+d} 根，"
-             f"排 3 個需 {a1+2*d} 根... 依此規律，排 {n} 個{shape_name}共需幾根火柴棒？")
-    
-    ans_val = a1 + (n - 1) * d
-    ans_str = f"{ans_val} 根"
-    detail = (f"這是首項 $a_1={a1}$，公差 $d={d}$ 的等差數列。\n"
-              f"$a_n = a_1 + (n-1)d = {a1} + ({n}-1)\\times{d} = {ans_val}$")
+        q_str = (f"遊樂園門票每張 {price} 元，{group_limit} 人以上(含)團體票打 {10-discount_off//10} 折。"
+                 f"若團體不足 {group_limit} 人，人數至少多少時，直接買 {group_limit} 張團體票反而划算？")
+        ans_str = f"{threshold} 人"
+        detail = f"設人數 x。$x \\times {price} > {group_limit} \\times {price} \\times {discount_rate}$。"
 
-    return {"topic": "🔥 進階-規律探索(數列)", "question": q_str, "answer": ans_str, "detail": detail}
+    elif scenario == 'mobile_plan':
+        # 情境 B: 電信資費比較
+        # 方案 A: 月租高，通話費低； 方案 B: 月租低，通話費高
+        base_a = random.randint(300, 600)
+        rate_a = random.randint(2, 4)
+        base_b = random.randint(100, 200)
+        rate_b = random.randint(6, 9)
+        
+        # 臨界點： base_a + rate_a * x < base_b + rate_b * x
+        # base_a - base_b < (rate_b - rate_a) * x
+        diff_base = base_a - base_b
+        diff_rate = rate_b - rate_a
+        threshold = math.ceil(diff_base / diff_rate)
+        
+        q_str = (f"電信方案 A 月租費 {base_a} 元，每分鐘通話 {rate_a} 元；"
+                 f"方案 B 月租費 {base_b} 元，每分鐘通話 {rate_b} 元。"
+                 f"當每月通話時間超過多少分鐘時，選擇方案 A 會比較划算？")
+        ans_str = f"{threshold} 分鐘"
+        detail = f"設通話 x 分鐘。${base_a} + {rate_a}x < {base_b} + {rate_b}x$，移項解 x。"
 
-def generate_exam_quadratics_app():
-    """試題改編：拋物線與最大值 (二次函數應用)"""
-    # 題目模版：拋球高度問題 h(t) = -at^2 + bt + c
-    # 設計頂點為整數
-    # Vertex at t = -b/(2a)
-    t_vertex = random.randint(2, 6)
-    max_h = random.randint(20, 100)
-    a = random.choice([-1, -2, -5]) # 重力係數相關，簡化為整數
-    
-    # 頂點式: y = a(t - t_vertex)^2 + max_h
-    # 展開: y = a(t^2 - 2*t*tv + tv^2) + max_h
-    # y = a*t^2 - 2*a*tv*t + (a*tv^2 + max_h)
-    
-    b = -2 * a * t_vertex
-    c = a * (t_vertex ** 2) + max_h
-    
-    # 隨機問法：最大高度 或 幾秒後落地(較難，先問最大高度)
-    q_str = (f"向上投擲一球，經 $t$ 秒後的高度 $h$ 公尺滿足函數關係式： "
-             f"$h(t) = {a}t^2 + {b}t + {c}$。請問此球在發射後第幾秒達到最高點？該高度為何？")
-    
-    ans_str = f"{t_vertex} 秒，{max_h} 公尺"
-    detail = (f"配方法求頂點：\n"
-              f"提出係數 ${a}$，配成 $y = {a}(t - {t_vertex})^2 + {max_h}$。\n"
-              f"當 $t={t_vertex}$ 時，有最大值 {max_h}。")
+    else:
+        # 情境 C: 存錢買東西
+        current_money = random.randint(1000, 5000)
+        saving_per_week = random.randint(200, 500)
+        target_price = random.randint(10000, 20000)
+        
+        # current + saving * x >= target
+        needed = target_price - current_money
+        weeks = math.ceil(needed / saving_per_week)
+        
+        q_str = (f"小明想買一台 {target_price} 元的筆電，他現在有 {current_money} 元，"
+                 f"並計畫每週存 {saving_per_week} 元。至少需要幾週後他的存款才足夠買筆電？")
+        ans_str = f"{weeks} 週"
+        detail = f"設 x 週後。${current_money} + {saving_per_week}x \\ge {target_price}$。"
 
-    return {"topic": "🔥 進階-二次函數應用", "question": q_str, "answer": ans_str, "detail": detail}
+    return {"topic": "🔥 進階-不等式應用", "question": q_str, "answer": ans_str, "detail": detail}
 
-def generate_exam_profit_problem():
-    """試題改編：利潤問題 (二元一次聯立 或 一元一次應用)"""
-    # 題目：已知 A 產品成本 x，B 產品成本 y
-    cost_a = random.randint(20, 100) * 10
-    cost_b = random.randint(20, 100) * 10
-    
-    profit_rate_a = random.choice([0.2, 0.3, 0.4])
-    profit_rate_b = random.choice([0.1, 0.2, 0.5])
-    
-    sell_a = int(cost_a * (1 + profit_rate_a))
-    sell_b = int(cost_b * (1 + profit_rate_b))
-    
-    count_a = random.randint(5, 20)
-    count_b = random.randint(5, 20)
-    
-    total_cost = cost_a * count_a + cost_b * count_b
-    total_sell = sell_a * count_a + sell_b * count_b
-    total_profit = total_sell - total_cost
-    
-    q_str = (f"商店買進 A、B 兩項商品共 {count_a + count_b} 件，已知 A 進價 {cost_a} 元，B 進價 {cost_b} 元。"
-             f"若 A 商品依進價加 {int(profit_rate_a*10)}成 賣出，B 商品依進價加 {int(profit_rate_b*10)}成 賣出，"
-             f"且最後總共賣得 {total_sell} 元。請問 A、B 各賣出幾件？(已知 A 賣出 {count_a} 件)")
-             
-    # 這裡故意把 A 的數量給出來當作已知條件，改成問 B 或是問總利潤，增加變化
-    # 為了讓題目更有邏輯，我們設計成「求解聯立」的文字敘述
-    
-    # 重寫題目：隱藏件數，給總件數與總賣價
-    q_str = (f"商店買進 A、B 兩項商品共 {count_a + count_b} 件。已知 A 進價 {cost_a} 元，B 進價 {cost_b} 元。"
-             f"A 依進價加 {int(profit_rate_a*10)}成 訂價，B 依進價加 {int(profit_rate_b*10)}成 訂價。"
-             f"全部賣出後總營收為 {total_sell} 元。請問 A 商品買進多少件？")
-             
-    ans_str = f"{count_a} 件"
-    detail = (f"設 A 有 $x$ 件，B 有 ${count_a + count_b} - x$ 件。\n"
-              f"A 售價=${sell_a}$，B 售價=${sell_b}$。\n"
-              f"方程式：${sell_a}x + {sell_b}({count_a + count_b} - x) = {total_sell}$，解得 $x={count_a}$。")
-    
-    return {"topic": "🔥 進階-銷售利潤問題", "question": q_str, "answer": ans_str, "detail": detail}
+def generate_advanced_sequence():
+    """進階-規律探索(數列)：隨機選擇不同場景"""
+    scenario = random.choice(['matchstick', 'auditorium', 'divisibility'])
+
+    if scenario == 'matchstick':
+        # 情境 A: 圖形規律 (火柴棒)
+        shape = random.choice(['正方形', '正三角形', '正六邊形'])
+        if shape == '正方形': a1, d = 4, 3
+        elif shape == '正三角形': a1, d = 3, 2
+        else: a1, d = 6, 5
+        n = random.randint(10, 50)
+        
+        q_str = (f"用火柴棒排連鎖{shape}，排1個需{a1}根，排2個需{a1+d}根... "
+                 f"請問排 {n} 個連鎖{shape}共需幾根火柴棒？")
+        ans_val = a1 + (n - 1) * d
+        ans_str = f"{ans_val} 根"
+        detail = f"等差數列首項 {a1}，公差 {d}。公式 $a_n = a_1 + (n-1)d$。"
+
+    elif scenario == 'auditorium':
+        # 情境 B: 禮堂座位 (座位數遞增)
+        a1 = random.randint(15, 30) # 第一排座位
+        d = random.randint(2, 4)    # 每排增加
+        row = random.randint(10, 20) # 問第幾排
+        
+        q_str = (f"表演廳座位區，第一排有 {a1} 個座位，之後每一排都比前一排多 {d} 個座位。"
+                 f"請問第 {row} 排有多少個座位？")
+        ans_val = a1 + (row - 1) * d
+        ans_str = f"{ans_val} 個"
+        detail = f"首項 {a1}，公差 {d}，求第 {row} 項。"
+
+    else:
+        # 情境 C: 倍數計數 (1~n 之間某數的倍數)
+        limit = random.randint(100, 500)
+        divisor = random.choice([3, 4, 6, 7, 8])
+        remainder = random.randint(1, divisor-1)
+        
+        q_str = (f"在 1 到 {limit} 的整數中，除以 {divisor} 餘 {remainder} 的數共有幾個？")
+        # 數列: remainder, remainder+divisor, ... <= limit
+        # an = remainder + (n-1)*divisor <= limit
+        # (n-1)*divisor <= limit - remainder
+        # n-1 <= (limit - remainder) // divisor
+        count = (limit - remainder) // divisor + 1
+        ans_str = f"{count} 個"
+        detail = f"找出數列：{remainder}, {remainder+divisor}, {remainder+2*divisor}... 利用通項公式逆推項數。"
+
+    return {"topic": "🔥 進階-數列規律", "question": q_str, "answer": ans_str, "detail": detail}
+
+def generate_advanced_quadratics():
+    """進階-二次函數應用：隨機選擇不同場景"""
+    scenario = random.choice(['projectile', 'area_max', 'revenue_max'])
+
+    if scenario == 'projectile':
+        # 情境 A: 拋物線高度 (原版)
+        t_vertex = random.randint(2, 5)
+        max_h = random.randint(20, 80)
+        a = -5 # 重力近似
+        b = -2 * a * t_vertex
+        c = a * t_vertex**2 + max_h
+        
+        q_str = (f"球被拋出後高度 $h$ 與時間 $t$ 關係為 $h(t) = {a}t^2 + {b}t + {c}$。"
+                 f"請問第幾秒達到最高點？最高高度為多少？")
+        ans_str = f"{t_vertex} 秒，{max_h} 公尺"
+        detail = "配方法化為頂點式 $y = a(x-h)^2 + k$，頂點即為極值。"
+
+    elif scenario == 'area_max':
+        # 情境 B: 圍籬笆面積最大化
+        # 周長固定，求矩形最大面積
+        # 周長 P = 2(L+W), L+W = P/2 = S. Area = L*W = L*(S-L)
+        s_half = random.randint(10, 40) * 2 # 半周長，偶數好算
+        perimeter = s_half * 2
+        # Max area when L = W = s_half / 2
+        side = s_half // 2
+        max_area = side * side
+        
+        q_str = (f"農夫想用長 {perimeter} 公尺的籬笆圍成一個長方形菜園(四邊都圍)。"
+                 f"請問圍出的最大面積是多少平方公尺？")
+        ans_str = f"{max_area} $m^2$"
+        detail = f"設長 x，寬 {s_half}-x。面積 $A(x) = x({s_half}-x)$，配方求最大值(正方形時)。"
+
+    else:
+        # 情境 C: 定價與營收
+        # 原價 p0, 銷量 q0。每漲價 x 元，銷量少 y 個。
+        p0 = random.randint(50, 100)
+        q0 = random.randint(200, 400)
+        delta_p = 1 # 漲 1 元
+        delta_q = random.randint(2, 5) # 少 delta_q 個
+        
+        # R(x) = (p0 + x)(q0 - delta_q * x)
+        # 頂點 x = (q0/delta_q - p0) / 2
+        # 為了讓數字漂亮，我們設計一下
+        # 讓 (q0/delta_q - p0) 是偶數
+        
+        # 重新生成好算的數字
+        delta_q = 2
+        p0 = 100
+        x_target = random.randint(10, 30) # 預設最佳漲價金額
+        # 為了讓頂點在 x_target，我們回推 q0
+        # x_vertex = (q0/2 - 100) / 2 = x_target -> q0/2 - 100 = 2*x_target -> q0 = 2*(2*x_target + 100)
+        q0 = 2 * (2 * x_target + 100)
+        
+        max_rev = (p0 + x_target) * (q0 - delta_q * x_target)
+        
+        q_str = (f"某商品單價 {p0} 元時，可賣出 {q0} 個。若單價每調漲 1 元，銷量會減少 {delta_q} 個。"
+                 f"請問定價應調漲多少元，才能獲得最大總營收？(營收=單價x銷量)")
+        ans_str = f"{x_target} 元"
+        detail = f"設調漲 x 元。營收 $R(x) = ({p0}+x)({q0}-{delta_q}x)$，展開配方求極值。"
+
+    return {"topic": "🔥 進階-二次函數極值", "question": q_str, "answer": ans_str, "detail": detail}
+
+def generate_advanced_system():
+    """進階-聯立方程式應用：隨機選擇不同場景"""
+    scenario = random.choice(['profit', 'age', 'speed'])
+
+    if scenario == 'profit':
+        # 情境 A: 買賣利潤 (原版)
+        cost_a = random.randint(20, 50) * 10
+        cost_b = random.randint(20, 50) * 10
+        count_a = random.randint(5, 15)
+        count_b = random.randint(5, 15)
+        total_items = count_a + count_b
+        # 售價
+        sell_a = int(cost_a * 1.3)
+        sell_b = int(cost_b * 1.2)
+        total_rev = sell_a * count_a + sell_b * count_b
+        
+        q_str = (f"商店買進A、B兩商品共{total_items}件。A定價{sell_a}元，B定價{sell_b}元。"
+                 f"全部賣完後總營收{total_rev}元。請問A商品有幾件？")
+        ans_str = f"{count_a} 件"
+        detail = f"設A有x件，B有({total_items}-x)件。${sell_a}x + {sell_b}({total_items}-x) = {total_rev}$。"
+
+    elif scenario == 'age':
+        # 情境 B: 父子年齡問題
+        # 設現在子 x，父 y。 y = k1 * x + b1.  (y+n) = k2 * (x+n)
+        son_now = random.randint(10, 15)
+        diff = random.randint(20, 30)
+        father_now = son_now + diff
+        
+        # 找一個未來/過去的時間點 n，使倍數是整數
+        # 簡單設計：現在父是子 k 倍 (不一定整數)，n年後是 2 倍
+        # (father_now + n) = 2 * (son_now + n)
+        # father + n = 2son + 2n -> n = father - 2son
+        n = father_now - 2 * son_now
+        
+        if n > 0:
+            time_str = f"{n} 年後"
+            rel_str = "2 倍"
+        elif n < 0:
+            time_str = f"{abs(n)} 年前"
+            rel_str = "2 倍"
+        else:
+            # n=0 特殊狀況，改別的題目邏輯
+            n = 5
+            father_future = father_now + n
+            son_future = son_now + n
+            # 這裡改成問和差
+            sum_age = father_now + son_now
+            q_str = f"父子現在年齡和為 {sum_age} 歲。{n} 年後，父親年齡是兒子的 {father_future/son_future:.1f} 倍(非整數)。求父現年？"
+            # 避免小數倍數太難，我們直接回傳簡單版
+            q_str = f"父親比兒子大 {diff} 歲，{n} 年後父親年齡是兒子的 {(father_now+n)//(son_now+n)} 倍。求兒子現年？"
+            # 重新計算倍數確保整數
+            son_now = 10
+            father_now = 40 # diff 30
+            n = 20 # son 30, father 60 (2倍)
+            diff = 30
+            
+        q_str = f"父親比兒子大 {diff} 歲。{abs(n)} 年後，父親年齡剛好是兒子的 2 倍。請問兒子現在幾歲？"
+        ans_str = f"{son_now} 歲"
+        detail = f"設子 x 歲，父 (x+{diff}) 歲。方程式：$(x+{diff}) + {n} = 2(x + {n})$。"
+
+    else:
+        # 情境 C: 順流逆流 (速率問題)
+        # 船速 v_boat, 水速 v_water
+        v_water = random.randint(2, 5)
+        v_boat = random.randint(15, 25)
+        dist = random.randint(30, 60) * 2 # 確保距離夠長
+        
+        # 順流速度 = v_boat + v_water
+        # 逆流速度 = v_boat - v_water
+        down_speed = v_boat + v_water
+        up_speed = v_boat - v_water
+        
+        q_str = (f"一艘船在河中行駛，順流而下時速率為每小時 {down_speed} 公里，"
+                 f"逆流而上時速率為每小時 {up_speed} 公里。請問水流速率為多少？")
+        ans_str = f"{v_water} km/hr"
+        detail = "設船速 x，水速 y。則 $\\begin{cases} x+y = " + str(down_speed) + " \\\\ x-y = " + str(up_speed) + " \\end{cases}$，解聯立求 y。"
+
+    return {"topic": "🔥 進階-聯立方程式應用", "question": q_str, "answer": ans_str, "detail": detail}
 
 
 # ==========================================
@@ -220,11 +340,11 @@ TOPIC_MAPPING = {
     "基礎 - 數與量 (運算/科學記號)": generate_number_basic,
     "基礎 - 代數 (方程式/不等式)": generate_linear_algebra_basic,
     "基礎 - 幾何 (角度/邊長)": generate_geometry_basic,
-    # 進階區 (新增)
-    "🔥 進階 - 生活應用 (門票優惠)": generate_exam_ticket_problem,
-    "🔥 進階 - 規律探索 (圖形數列)": generate_exam_sequence_pattern,
-    "🔥 進階 - 二次函數 (拋物線應用)": generate_exam_quadratics_app,
-    "🔥 進階 - 商業應用 (利潤問題)": generate_exam_profit_problem
+    # 進階區 (現在每個都會隨機出不同情境)
+    "🔥 進階 - 生活應用 (不等式)": generate_advanced_inequality,
+    "🔥 進階 - 規律探索 (數列)": generate_advanced_sequence,
+    "🔥 進階 - 二次函數 (極值應用)": generate_advanced_quadratics,
+    "🔥 進階 - 商業/速率 (聯立應用)": generate_advanced_system
 }
 
 def generate_exam_data(selected_topics, num_questions):
@@ -275,7 +395,7 @@ def create_pdf(exam_data, custom_title, mode="student"):
     pdf.ln(10)
     
     for idx, item in enumerate(exam_data):
-        clean_q = item['question'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\times', 'x').replace('\\div', '÷').replace('\\le', '<=')
+        clean_q = item['question'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\times', 'x').replace('\\div', '÷').replace('\\le', '<=').replace('\\ge', '>=')
         clean_a = item['answer'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\pi', 'π').replace('\\times', 'x')
         
         # 標題縮寫
@@ -309,7 +429,7 @@ def create_pdf(exam_data, custom_title, mode="student"):
 
 def main():
     st.title("📝 全方位國中數學出題系統 (Pro版)")
-    st.markdown("### 包含基礎觀念與 **🔥 歷屆試題改編**")
+    st.markdown("### 包含基礎觀念與 **🔥 歷屆試題改編 (多情境版)**")
     st.markdown("---")
 
     all_topics = list(TOPIC_MAPPING.keys())
@@ -337,7 +457,7 @@ def main():
         num_questions = st.slider("題目數量", 5, 50, 10)
         generate_btn = st.button("🚀 建立新考卷", type="primary")
         
-        st.info("🔥 進階題型說明：\n包含門票優惠問題、圖形數列規律、二次函數投擲問題、利潤銷售問題。這些都是歷屆會考常見的素養題型。")
+        st.info("🔥 PRO版特色：\n進階題型內建多種情境（如手機資費、存錢計畫、圍籬笆面積等），隨機切換，拒絕死背！")
 
     if "exam_data" not in st.session_state:
         st.session_state["exam_data"] = []
@@ -346,7 +466,7 @@ def main():
         if not selected_topics:
             st.error("請至少選擇一個單元！")
         else:
-            with st.spinner("正在生成素養題與運算題..."):
+            with st.spinner("正在生成多變素養題..."):
                 st.session_state["exam_data"] = generate_exam_data(selected_topics, num_questions)
             st.success(f"成功生成 {len(st.session_state['exam_data'])} 題！")
 
