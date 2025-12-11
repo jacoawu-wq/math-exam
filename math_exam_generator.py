@@ -4,6 +4,7 @@ import math
 from fpdf import FPDF
 import os
 import tempfile
+import uuid  # 新增：用於產生唯一檔名，解決圖片重複問題
 
 # 1. 設定頁面配置
 st.set_page_config(page_title="全方位數學自動出題系統", layout="wide", page_icon="📝")
@@ -91,12 +92,10 @@ def generate_geometry_basic():
 
 def generate_real_exam_exponents():
     """還原題型：指數律運算 (參考 Q1)"""
-    # 題目形式：7^10 * 7^2 / 7^4
     base = random.choice([2, 3, 5, 7, 10])
     n1 = random.randint(5, 15)
     n2 = random.randint(2, 5)
     n3 = random.randint(3, 8)
-    
     q_str = f"算式 ${base}^{{{n1}}} \\times {base}^{{{n2}}} \\div {base}^{{{n3}}}$ 之值可用下列何者表示？"
     ans_pow = n1 + n2 - n3
     ans_str = f"${base}^{{{ans_pow}}}$"
@@ -105,55 +104,36 @@ def generate_real_exam_exponents():
 
 def generate_real_exam_polynomial():
     """還原題型：多項式減法 (參考 Q2)"""
-    # 題目形式：(5x^2 - 2x) - (4 - 3x)
     a = random.randint(2, 9)
-    b = random.randint(-9, -1) # 讓它是負的，增加去括號難度
+    b = random.randint(-9, -1)
     c = random.randint(1, 9)
-    d = random.randint(-9, -1) # 第二項 x 係數
-    
-    # 建構題目字串 (注意符號處理)
-    poly1 = f"{a}x^2 {b}x" # 簡單處理，若 b 為負會顯示 5x^2 -2x (可接受，或寫更細)
+    d = random.randint(-9, -1)
+    poly1 = f"{a}x^2 {b}x"
     poly2 = f"{c} {d}x"
-    
     q_str = f"計算 $({a}x^2 + ({b}x)) - ({c} + ({d}x))$ 的結果，與下列何者相同？"
-    
-    # 計算結果
-    # x^2 係數: a
-    # x 係數: b - d
-    # 常數: -c
     coeff_x = b - d
     coeff_c = -c
-    
     x_sign = "+" if coeff_x >= 0 else "-"
     c_sign = "+" if coeff_c >= 0 else "-"
-    
     ans_str = f"${a}x^2 {x_sign} {abs(coeff_x)}x {c_sign} {abs(coeff_c)}$"
     detail = f"去括號變號：$({a}x^2 {b}x) - {c} - ({d}x) = {a}x^2 + ({b}-{d})x - {c}$。"
     return {"topic": "🔥 歷屆-多項式", "question": q_str, "answer": ans_str, "detail": detail}
 
 def generate_real_exam_system_val():
     """還原題型：聯立方程式求代數值 (參考 Q4)"""
-    # 先決定 x, y 答案 (整數)
     x = random.randint(-5, 5)
     y = random.randint(-5, 5)
-    
-    # 生成係數 (故意用一點大數字)
     a1 = random.randint(10, 40)
     b1 = random.randint(2, 9)
     c1 = a1 * x + b1 * y
-    
     a2 = random.randint(10, 40)
-    b2 = -b1 # 設計讓 y 係數互為相反數，方便消去 (或是隨機)
+    b2 = -b1
     c2 = a2 * x + b2 * y
-    
-    # 題目問 ax + by 的值
     ask_a = random.randint(1, 3)
     ask_b = random.randint(1, 3)
     target_val = ask_a * x + ask_b * y
-    
     eq1 = f"{a1}x + {b1}y = {c1}"
-    eq2 = f"{a2}x {b2}y = {c2}" # b2 是負數
-    
+    eq2 = f"{a2}x {b2}y = {c2}"
     q_str = f"若二元一次聯立方程式 $\\begin{{cases}} {eq1} \\\\ {eq2} \\end{{cases}}$ 的解為 $\\begin{{cases}} x=a \\\\ y=b \\end{{cases}}$，則 ${ask_a}a + {ask_b}b$ 之值為何？"
     ans_str = f"{target_val}"
     detail = f"先解聯立得 $x={x}, y={y}$。代入 ${ask_a}({x}) + {ask_b}({y}) = {target_val}$。"
@@ -161,30 +141,15 @@ def generate_real_exam_system_val():
 
 def generate_real_exam_radicals():
     """還原題型：根號運算 (參考 Q8)"""
-    # 題目形式：(2sqrt(3) + sqrt(6)) * sqrt(2)
-    # 設計構造： (a sqrt(b) + sqrt(c)) * sqrt(d)
-    # 讓 c * d = b * k^2 (可以化簡)
-    
     d = random.choice([2, 3, 5])
     b = random.choice([2, 3, 5])
-    if b == d: b = 7 # 避免過度重複
-    
+    if b == d: b = 7
     a = random.randint(2, 4)
-    # 讓 c*d 是一個完全平方數的倍數，例如 c=6, d=2 -> 12 -> 2sqrt(3)
-    # 或者簡單一點，隨機生成，最後讓答案保留根號
-    c = b * d * random.choice([1, 4]) # 這樣 c*d 會包含 d^2
-    # 修正邏輯：隨機出題，解析寫清楚化簡過程
-    
     c = random.choice([6, 10, 15])
     d = random.choice([2, 3, 5])
-    
     q_str = f"計算 $({a}\\sqrt{{{b}}} + \\sqrt{{{c}}}) \\times \\sqrt{{{d}}}$ 的結果。"
-    
-    # 答案計算: a*sqrt(bd) + sqrt(cd)
     term1_inner = b * d
     term2_inner = c * d
-    
-    # 簡單化簡 function
     def simplify_sqrt(val):
         root = 1
         for i in range(2, int(math.sqrt(val)) + 1):
@@ -192,49 +157,35 @@ def generate_real_exam_radicals():
                 root *= i
                 val //= (i * i)
         return root, val
-
     c1, r1 = simplify_sqrt(term1_inner)
     c2, r2 = simplify_sqrt(term2_inner)
-    
-    # 合併係數 a
     total_c1 = a * c1
-    
-    # 檢查根號內是否相同，可合併
     if r1 == r2:
         ans_str = f"${total_c1 + c2}\\sqrt{{{r1}}}$"
     else:
         term1 = f"{total_c1}\\sqrt{{{r1}}}" if r1 > 1 else f"{total_c1}"
         term2 = f"{c2}\\sqrt{{{r2}}}" if r2 > 1 else f"{c2}"
-        if c2 == 1 and r2 > 1: term2 = f"\\sqrt{{{r2}}}" # 係數1不寫
+        if c2 == 1 and r2 > 1: term2 = f"\\sqrt{{{r2}}}"
         ans_str = f"${term1} + {term2}$"
-
     detail = f"分配律：${a}\\sqrt{{{b}}}\\times\\sqrt{{{d}}} + \\sqrt{{{c}}}\\times\\sqrt{{{d}}} = {a}\\sqrt{{{term1_inner}}} + \\sqrt{{{term2_inner}}}$，再化簡。"
     return {"topic": "🔥 歷屆-根號運算", "question": q_str, "answer": ans_str, "detail": detail}
 
 def generate_real_exam_quadratic_shift():
     """還原題型：二次函數平移 (參考 Q21)"""
-    # 題目：y = -(x+h)^2 + k 向右/左平移
     h = random.randint(-9, 9)
     k = random.randint(-10, 10)
-    a = -1 # 參考題目開口向下
-    
+    a = -1 
     shift = random.randint(2, 10)
     direction = random.choice(["右", "左"])
-    
     h_sign = "+" if h >= 0 else "-"
     org_eq = f"y = - (x {h_sign} {abs(h)})^2 + {k}"
-    
     q_str = f"座標平面上有二次函數 ${org_eq}$ 的圖形，將此圖形向{direction}平移 {shift} 單位。求新圖形的頂點座標？"
-    
-    # 原頂點 (-h, k)
     org_v_x = -h
     org_v_y = k
-    
     if direction == "右":
         new_v_x = org_v_x + shift
     else:
         new_v_x = org_v_x - shift
-        
     ans_str = f"$({new_v_x}, {org_v_y})$"
     detail = f"原頂點為 $({org_v_x}, {org_v_y})$。向{direction}移 {shift} 單位 $\\rightarrow$ x 座標{'+' if direction=='右' else '-'} {shift}。"
     return {"topic": "🔥 歷屆-二次函數平移", "question": q_str, "answer": ans_str, "detail": detail}
@@ -273,7 +224,6 @@ def generate_advanced_inequality():
 
 def generate_advanced_sequence():
     """進階-規律探索(數列)"""
-    # 火柴棒問題
     shape = random.choice(['正方形', '正三角形', '正六邊形'])
     if shape == '正方形': a1, d = 4, 3
     elif shape == '正三角形': a1, d = 3, 2
@@ -359,7 +309,6 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
             clean_q = item['question'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\times', 'x').replace('\\div', '÷').replace('\\le', '<=').replace('\\ge', '>=')
             clean_a = item['answer'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\pi', 'π').replace('\\times', 'x')
             
-            # 標題縮寫
             topic_show = item['topic']
             if "🔥" in topic_show: topic_show = "歷屆改編"
             elif "進階" in topic_show: topic_show = "素養應用"
@@ -373,7 +322,6 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
             else:
                 pdf.set_text_color(255, 0, 0)
                 pdf.multi_cell(0, 8, f"Ans: {clean_a}")
-                # [Fix] 修正錯誤：使用 set_font_size 而不是 set_font(size=10)
                 pdf.set_font_size(10)
                 pdf.set_text_color(100, 100, 100)
                 pdf.multi_cell(0, 8, f"解析: {item['detail']}")
@@ -385,30 +333,44 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
         if not uploaded_images:
             pdf.cell(0, 10, "本試卷無隨機題目。", ln=True)
 
-    # 2. 圖片試題區 (優化：每張圖一頁，滿版顯示)
+    # 2. 圖片試題區 (修復：使用 uuid 產生唯一檔名，避免圖片重複)
     if uploaded_images:
         pdf.add_page()
         if font_ready: pdf.set_font("TaipeiSans", '', 16)
         pdf.cell(0, 10, "--- 以下為上傳之圖片試題 ---", ln=True, align='C')
         
         for img_file in uploaded_images:
+            tmp_path = None
             try:
+                # 重置指標，確保讀取完整
                 img_file.seek(0)
+                
+                # 取得副檔名
                 file_ext = img_file.name.split('.')[-1].lower()
                 if file_ext not in ['jpg', 'jpeg', 'png']: file_ext = 'png'
-                with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
-                    tmp.write(img_file.read())
-                    tmp_path = tmp.name
                 
-                # [Improvement] 新增一頁，並將圖片放大至滿版 (寬 190mm，預留邊距)
+                # [關鍵修正] 使用 uuid 產生絕對唯一的亂數檔名，防止 PDF 快取舊圖
+                unique_name = f"{uuid.uuid4()}.{file_ext}"
+                tmp_path = os.path.join(tempfile.gettempdir(), unique_name)
+                
+                # 使用標準寫入，確保資料完整落地
+                with open(tmp_path, "wb") as tmp:
+                    tmp.write(img_file.read())
+                
+                # 新增頁面並插入圖片 (滿版)
                 pdf.add_page()
-                # A4 寬 210mm，高 297mm。w=190 代表左右各留 10mm 邊距
                 pdf.image(tmp_path, x=10, y=10, w=190)
                 
-                os.remove(tmp_path)
             except Exception as e:
                 pdf.set_font("Arial", '', 10)
-                pdf.cell(0, 10, f"Error: {e}", ln=True)
+                pdf.cell(0, 10, f"Image Error: {e}", ln=True)
+            finally:
+                # 清理暫存檔
+                if tmp_path and os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except:
+                        pass
 
     return pdf.output(dest='S').encode('latin-1')
 
@@ -423,7 +385,6 @@ def main():
 
     all_topics = list(TOPIC_MAPPING.keys())
     if "selected_topics" not in st.session_state:
-        # 預設選一些基礎跟歷屆改編
         st.session_state.selected_topics = [t for t in all_topics if "歷屆" in t][:3]
 
     def toggle_all():
