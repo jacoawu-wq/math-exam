@@ -29,7 +29,7 @@ except ImportError:
     st.error("⚠️ 系統缺少 google-generativeai。請檢查 requirements.txt，並請嘗試 Reboot App。")
 
 # 1. 設定頁面配置
-st.set_page_config(page_title="全方位數學自動出題系統 (AI 終極版)", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="全方位數學自動出題系統 (AI 省流版)", layout="wide", page_icon="🛡️")
 
 # 字型設定
 font_path = 'TaipeiSansTCBeta-Regular.ttf'
@@ -42,8 +42,10 @@ if HAS_MATPLOTLIB and os.path.exists(font_path):
 # Part 0: AI 核心邏輯 (Gemini Integration)
 # ==========================================
 
-def get_ai_variation(image_file, api_key, model_name):
-    """使用 Google Gemini Vision 模型分析圖片 (含安全設定與強效重試機制)"""
+def get_ai_variation(image_file, api_key, model_name, num_variations=1):
+    """
+    使用 Google Gemini Vision 模型分析圖片 (批次生成多題以節省額度)
+    """
     if not HAS_GENAI: return None, "缺少 AI 套件"
     if not api_key: return None, "未輸入 API Key"
     
@@ -54,16 +56,33 @@ def get_ai_variation(image_file, api_key, model_name):
         image_file.seek(0)
         img = Image.open(image_file)
         
-        prompt = """
+        # [關鍵更新] Prompt 支援一次生成多題
+        prompt = f"""
         你是一位專業的國中數學老師。請分析這張圖片中的數學題目：
         1. 找出核心觀念。
-        2. 「重新設計」一道新題目，邏輯相同但數字改變。
-        3. 【重要】如果題目涉及幾何圖形，請撰寫一段 Python matplotlib 程式碼來繪製該圖。
+        2. 請根據這個觀念，連續設計【{num_variations} 道】不同的新題目。
+           - 每一題的數字與情境都要不同。
+           - 題目敘述要通順繁體中文。
+        3. 【重要】如果題目涉及幾何圖形，請為每一題撰寫一段 Python matplotlib 程式碼。
            - 必須將圖表物件存入變數 `fig`。
            - 若有文字標註，請直接使用中文。
         
-        請嚴格依照以下格式輸出（不要輸出 markdown）：
-        [題目] ... [答案] ... [解析] ... [繪圖程式碼] ...
+        請嚴格依照以下格式輸出（每一題之間用 "===題組分隔線===" 分隔）：
+        
+        [題目]
+        (第1題內容)
+        [答案]
+        (第1題答案)
+        [解析]
+        (第1題過程)
+        [繪圖程式碼]
+        (第1題代碼，若無則留空)
+        
+        ===題組分隔線===
+        
+        [題目]
+        (第2題內容...)
+        ...
         """
         
         safety_settings = {
@@ -73,21 +92,19 @@ def get_ai_variation(image_file, api_key, model_name):
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
         
-        # [關鍵修正] 遞增式重試機制，專門對付 429 錯誤
         max_retries = 3
         for attempt in range(max_retries + 1):
             try:
                 response = model.generate_content([prompt, img], safety_settings=safety_settings)
-                break # 成功則跳出
+                break 
             except Exception as e:
                 if "429" in str(e):
                     if attempt < max_retries:
-                        # 第一次等 10秒, 第二次 20秒, 第三次 30秒
                         wait_time = (attempt + 1) * 10
                         time.sleep(wait_time) 
                         continue
                     else:
-                        return None, "API 額度已滿 (429)，請稍後再試或更換 API Key。"
+                        return None, "API 額度已滿 (429)，請稍後再試。"
                 else:
                     raise e
 
@@ -96,7 +113,7 @@ def get_ai_variation(image_file, api_key, model_name):
             
         candidate = response.candidates[0]
         if candidate.finish_reason.name != "STOP":
-             return None, f"生成被中斷 (原因: {candidate.finish_reason.name})。"
+             return None, f"生成被中斷 ({candidate.finish_reason.name})。"
 
         if not candidate.content or not candidate.content.parts:
              return None, "AI 回傳了空白內容。"
@@ -107,28 +124,40 @@ def get_ai_variation(image_file, api_key, model_name):
         return None, f"AI 處理失敗: {str(e)}"
 
 def parse_ai_response(text):
-    """解析 AI 回傳格式"""
-    result = {"topic": "🤖 AI-仿題生成", "question": "", "answer": "", "detail": "", "code": None}
-    try:
-        if '[題目]' in text:
-            parts = text.split('[答案]')
-            result["question"] = parts[0].replace('[題目]', '').strip()
-            remain = parts[1]
-            if '[解析]' in remain:
-                parts2 = remain.split('[解析]')
-                result["answer"] = parts2[0].strip()
-                remain2 = parts2[1]
-                if '[繪圖程式碼]' in remain2:
-                    parts3 = remain2.split('[繪圖程式碼]')
-                    result["detail"] = parts3[0].strip()
-                    code_str = parts3[1].strip().replace('```python', '').replace('```', '')
-                    if len(code_str) > 10: result["code"] = code_str
-                else:
-                    result["detail"] = remain2.strip()
-    except:
-        result["question"] = text
-        result["answer"] = "解析失敗"
-    return result
+    """解析 AI 回傳格式 (支援多題解析)"""
+    questions = []
+    
+    # 先用分隔線切開每一題
+    raw_blocks = text.split("===題組分隔線===")
+    
+    for block in raw_blocks:
+        if not block.strip(): continue
+        
+        result = {"topic": "🤖 AI-仿題生成", "question": "", "answer": "", "detail": "", "code": None}
+        try:
+            if '[題目]' in block:
+                parts = block.split('[答案]')
+                result["question"] = parts[0].replace('[題目]', '').strip()
+                remain = parts[1]
+                if '[解析]' in remain:
+                    parts2 = remain.split('[解析]')
+                    result["answer"] = parts2[0].strip()
+                    remain2 = parts2[1]
+                    if '[繪圖程式碼]' in remain2:
+                        parts3 = remain2.split('[繪圖程式碼]')
+                        result["detail"] = parts3[0].strip()
+                        code_str = parts3[1].strip().replace('```python', '').replace('```', '')
+                        if len(code_str) > 10: result["code"] = code_str
+                    else:
+                        result["detail"] = remain2.strip()
+                questions.append(result)
+        except:
+            continue
+            
+    if not questions and text:
+        return [{"topic": "🤖 AI-仿題生成", "question": text, "answer": "解析失敗", "detail": "格式不符"}]
+        
+    return questions
 
 def execute_drawing_code(code_str):
     """執行繪圖代碼"""
@@ -283,7 +312,7 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
 # ==========================================
 
 def main():
-    st.title("🤖 全方位國中數學出題系統 (AI 終極版)")
+    st.title("🤖 全方位國中數學出題系統 (AI 省流版)")
     
     if "exam_data" not in st.session_state: st.session_state["exam_data"] = []
     if "ai_generated_questions" not in st.session_state: st.session_state["ai_generated_questions"] = []
@@ -321,6 +350,13 @@ def main():
         uploaded_files = st.file_uploader("上傳考題", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
         
         st.divider()
+        
+        # [New] AI 批次生成設定 (增加上限至10)
+        st.subheader("💡 AI 變題設定")
+        ai_variations = st.slider("每張圖要變出幾道新題? (單次請求生成多題)", 1, 10, 1, help="設定每張上傳的圖片，AI 要模仿出幾道類似題。一次生成多題可節省 API 額度並加快速度。")
+        
+        st.divider()
+        st.subheader("🎲 隨機題目")
         all_topics = list(TOPIC_MAPPING.keys())
         selected_topics = st.multiselect("隨機單元", options=all_topics)
         num_questions = st.slider("隨機題數", 0, 20, 5)
@@ -345,23 +381,22 @@ def main():
                 status_text = st.empty()
                 
                 for idx, img_file in enumerate(uploaded_files):
-                    status_text.text(f"🤖 AI 分析第 {idx+1}/{len(uploaded_files)} 題...")
+                    status_text.text(f"🤖 AI 分析第 {idx+1}/{len(uploaded_files)} 題 (生成 {ai_variations} 變題)...")
                     
-                    # [關鍵修正] 強制冷卻機制：Google API 免費版限制每分鐘 15 次
-                    # 為了安全起見，每張圖處理完後，強制倒數 10~15 秒
                     if idx > 0:
                         for s in range(15, 0, -1):
-                            status_text.text(f"⏳ 避免額度超標，冷卻中... {s} 秒")
+                            status_text.text(f"⏳ 額度保護冷卻中... {s} 秒")
                             time.sleep(1)
                     
-                    ai_text, error = get_ai_variation(img_file, api_key, selected_model)
+                    ai_text, error = get_ai_variation(img_file, api_key, selected_model, num_variations=ai_variations)
                     
                     if error:
                         st.warning(f"第 {idx+1} 張圖片分析略過: {error}")
                     else:
-                        new_q = parse_ai_response(ai_text)
-                        new_q["source_img_idx"] = idx 
-                        st.session_state["ai_generated_questions"].append(new_q)
+                        new_qs = parse_ai_response(ai_text)
+                        for q in new_qs:
+                            q["source_img_idx"] = idx 
+                            st.session_state["ai_generated_questions"].append(q)
                     
                     progress_bar.progress((idx + 1) / len(uploaded_files))
                 
