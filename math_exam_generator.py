@@ -347,10 +347,12 @@ def main():
                 for idx, img_file in enumerate(uploaded_files):
                     status_text.text(f"🤖 AI 分析第 {idx+1}/{len(uploaded_files)} 題...")
                     
-                    # [關鍵修正] 增加基礎緩衝時間至 10 秒
+                    # [關鍵修正] 強制冷卻機制：Google API 免費版限制每分鐘 15 次
+                    # 為了安全起見，每張圖處理完後，強制倒數 10~15 秒
                     if idx > 0:
-                        with st.spinner(f"為避免超過免費額度，冷卻 10 秒中..."):
-                            time.sleep(10)
+                        for s in range(15, 0, -1):
+                            status_text.text(f"⏳ 避免額度超標，冷卻中... {s} 秒")
+                            time.sleep(1)
                     
                     ai_text, error = get_ai_variation(img_file, api_key, selected_model)
                     
