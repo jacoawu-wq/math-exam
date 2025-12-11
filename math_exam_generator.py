@@ -18,7 +18,7 @@ try:
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
-    st.error("⚠️ 系統缺少 matplotlib。請檢查 requirements.txt。")
+    st.error("⚠️ 系統缺少 matplotlib。請檢查 requirements.txt 是否包含 'matplotlib'，並請嘗試 Reboot App。")
 
 # 匯入 Google Generative AI
 try:
@@ -27,7 +27,7 @@ try:
     HAS_GENAI = True
 except ImportError:
     HAS_GENAI = False
-    st.error("⚠️ 系統缺少 google-generativeai。請檢查 requirements.txt。")
+    st.error("⚠️ 系統缺少 google-generativeai。請檢查 requirements.txt，並請嘗試 Reboot App。")
 
 # 1. 設定頁面配置
 st.set_page_config(page_title="全方位數學自動出題系統 (AI 旗艦版)", layout="wide", page_icon="🛡️")
@@ -89,6 +89,7 @@ def get_ai_variation(image_input, api_key, model_name):
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
         
+        # 重試機制 (針對 429 錯誤)
         max_retries = 3
         for attempt in range(max_retries + 1):
             try:
@@ -291,6 +292,24 @@ def main():
         else:
             api_key = st.text_input("Google API Key", type="password")
         
+        # [關鍵更新] 自動列出可用模型，解決 404 問題
+        model_options = ["models/gemini-1.5-flash", "models/gemini-pro"]
+        selected_model = model_options[0]
+        if api_key and HAS_GENAI:
+            try:
+                genai.configure(api_key=api_key)
+                models = list(genai.list_models())
+                available = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
+                if available:
+                    default_idx = 0
+                    # 優先選 flash 模型，速度快且便宜
+                    for i, m in enumerate(available):
+                        if "flash" in m: default_idx = i; break
+                    model_options = available
+                    selected_model = st.selectbox("AI 模型 (自動偵測)", model_options, index=default_idx)
+            except:
+                st.warning("⚠️ 無法連線 Google 取得模型列表，將使用預設值。")
+        
         bank_folder = "question_bank"
         bank_images = []
         if os.path.exists(bank_folder):
@@ -317,12 +336,10 @@ def main():
                 bank_sample_count = st.slider("從題庫隨機抽出幾張圖?", 1, min(10, len(bank_images)), 3)
         
         st.divider()
-        st.subheader("2. AI 設定")
-        
-        st.info("🧩 預設模式：自動拆解圖片中的多道題目 (針對圖中每一題各產生 1 個變體)")
-        
-        model_options = ["models/gemini-1.5-flash", "models/gemini-1.5-pro"]
-        selected_model = st.selectbox("AI 模型", model_options)
+        st.subheader("2. 隨機題庫 (非AI)")
+        all_topics = list(TOPIC_MAPPING.keys())
+        selected_topics = st.multiselect("選擇單元", options=all_topics)
+        num_questions = st.slider("題目數量", 0, 50, 5)
 
         generate_btn = st.button("🚀 建立考卷", type="primary")
 
@@ -331,6 +348,10 @@ def main():
         st.session_state["ai_generated_questions"] = []
         st.session_state["selected_bank_images"] = [] 
         
+        # 生成非 AI 題
+        if selected_topics:
+             st.session_state["exam_data"] = generate_exam_data(selected_topics, num_questions)
+
         target_images = []
         
         if source_mode == "📸 上傳圖片 (單次)" and uploaded_files:
@@ -375,25 +396,33 @@ def main():
         
         st.success("考卷生成完畢！")
 
-    has_content = st.session_state["ai_generated_questions"] or st.session_state["selected_bank_images"]
+    has_content = st.session_state["ai_generated_questions"] or st.session_state["selected_bank_images"] or st.session_state["exam_data"]
     
     if has_content:
         st.markdown(f"## 🏫 {custom_title}")
         col1, col2 = st.columns([2, 1])
         with col1: show_answers = st.checkbox("🔍 顯示解答", value=False)
         with col2:
-            final_data = st.session_state["ai_generated_questions"]
+            final_data = st.session_state["exam_data"] + st.session_state["ai_generated_questions"]
             if st.button("📥 下載 PDF"):
                 pdf_bytes = create_pdf(final_data, custom_title, mode="parent", image_paths=st.session_state["selected_bank_images"])
                 st.download_button("點此下載", pdf_bytes, f"{custom_title}.pdf", "application/pdf")
 
         st.divider()
 
+        if st.session_state["exam_data"]:
+            st.subheader("📝 基礎試題")
+            for i, q in enumerate(st.session_state["exam_data"]):
+                st.markdown(f"**Q{i+1}. [{q['topic']}]**")
+                st.markdown(q['question'])
+                if show_answers: st.success(f"Ans: {q['answer']}"); st.caption(q['detail'])
+                st.write("---")
+
         if st.session_state["ai_generated_questions"]:
             st.subheader("📝 AI 變題區")
             for i, q in enumerate(st.session_state["ai_generated_questions"]):
                 source_label = f" (源自圖 {q.get('source_img_idx', 0)+1})"
-                st.markdown(f"**Q{i+1}{source_label}.**")
+                st.markdown(f"**AI-Q{i+1}{source_label}.**")
                 
                 col_q, col_img = st.columns([2, 1])
                 with col_q:
