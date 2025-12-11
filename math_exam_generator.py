@@ -6,7 +6,7 @@ import os
 import tempfile
 import uuid
 import io
-import time  # [New] 用於速率限制緩衝
+import time
 from PIL import Image
 
 # 嘗試匯入 matplotlib
@@ -17,18 +17,19 @@ try:
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
-    st.error("⚠️ 系統缺少 matplotlib。請檢查 requirements.txt。")
+    st.error("⚠️ 系統缺少 matplotlib。請檢查 requirements.txt 是否包含 'matplotlib'。")
 
 # 匯入 Google Generative AI
 try:
     import google.generativeai as genai
+    from google.generativeai.types import HarmCategory, HarmBlockThreshold
     HAS_GENAI = True
 except ImportError:
     HAS_GENAI = False
     st.error("⚠️ 系統缺少 google-generativeai。請檢查 requirements.txt。")
 
 # 1. 設定頁面配置
-st.set_page_config(page_title="全方位數學自動出題系統 (AI繪圖旗艦版)", layout="wide", page_icon="🎨")
+st.set_page_config(page_title="全方位數學自動出題系統 (AI 終極版)", layout="wide", page_icon="🛡️")
 
 # 字型設定
 font_path = 'TaipeiSansTCBeta-Regular.ttf'
@@ -42,7 +43,7 @@ if HAS_MATPLOTLIB and os.path.exists(font_path):
 # ==========================================
 
 def get_ai_variation(image_file, api_key, model_name):
-    """使用 Google Gemini Vision 模型分析圖片"""
+    """使用 Google Gemini Vision 模型分析圖片 (含安全設定與重試機制)"""
     if not HAS_GENAI: return None, "缺少 AI 套件"
     if not api_key: return None, "未輸入 API Key"
     
@@ -65,22 +66,42 @@ def get_ai_variation(image_file, api_key, model_name):
         [題目] ... [答案] ... [解析] ... [繪圖程式碼] ...
         """
         
-        response = model.generate_content([prompt, img])
+        # [關鍵修正 1] 設定安全過濾器為「不阻擋」，避免誤判導致錯誤
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
         
-        # 安全性檢查 (解決 Invalid operation)
-        if hasattr(response, 'candidates') and response.candidates:
-             if response.candidates[0].finish_reason.name == "SAFETY":
-                 return None, "內容觸發安全過濾。"
-        
-        if not response.parts:
-             return None, "AI 回傳空白。"
+        # [關鍵修正 2] 簡單的重試機制，處理 429 錯誤
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                response = model.generate_content([prompt, img], safety_settings=safety_settings)
+                break # 成功則跳出迴圈
+            except Exception as e:
+                if "429" in str(e) and attempt < max_retries:
+                    time.sleep(3) # 等待 3 秒後重試
+                    continue
+                else:
+                    raise e # 其他錯誤直接拋出
+
+        # [關鍵修正 3] 嚴格檢查回傳內容，避免崩潰
+        if not response.candidates:
+            return None, "AI 拒絕回答 (可能觸發安全機制或無內容)。"
+            
+        candidate = response.candidates[0]
+        if candidate.finish_reason.name != "STOP":
+             return None, f"生成被中斷 (原因: {candidate.finish_reason.name})。"
+
+        if not candidate.content or not candidate.content.parts:
+             return None, "AI 回傳了空白內容。"
 
         return response.text, None
             
     except Exception as e:
-        if "429" in str(e):
-            return None, "速度太快了 (429)，請稍後再試。"
-        return None, f"AI 錯誤: {str(e)}"
+        return None, f"AI 處理失敗: {str(e)}"
 
 def parse_ai_response(text):
     """解析 AI 回傳格式"""
@@ -123,9 +144,8 @@ def execute_drawing_code(code_str):
     return None
 
 # ==========================================
-# Part 1: 基礎題目生成 (簡化保留)
+# Part 1: 基礎題目生成
 # ==========================================
-# (此處保留原有的基礎生成函數，為節省篇幅不重複列出，功能與之前相同)
 def generate_number_basic():
     sub_type = random.choice(['calc', 'sci', 'index'])
     if sub_type == 'calc':
@@ -176,7 +196,7 @@ def generate_exam_data(selected_topics, num_questions):
     return exam_list
 
 # ==========================================
-# Part 5: PDF 匯出 (修復版)
+# Part 5: PDF 匯出
 # ==========================================
 
 class PDFExport(FPDF):
@@ -202,13 +222,11 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
     pdf.cell(0, 10, f"{custom_title} ({'學生' if mode=='student' else '解答'}卷)", ln=True, align='C')
     pdf.ln(10)
     
-    # 題目區
     for idx, item in enumerate(exam_data):
         q_text = item['question'].replace('$', '').replace('\\times', 'x').replace('\\div', '/')
         t_name = item['topic'].split('-')[-1] if '-' in item['topic'] else item['topic']
         pdf.multi_cell(0, 10, f"Q{idx+1}. [{t_name}] {q_text}")
         
-        # 插入圖片 (內建或 AI 繪製)
         img_buf = None
         if 'image_data' in item: img_buf = item['image_data']
         elif 'code' in item and item['code']: img_buf = execute_drawing_code(item['code'])
@@ -227,7 +245,6 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
         else:
             pdf.set_text_color(255, 0, 0)
             pdf.multi_cell(0, 8, f"Ans: {item['answer']}")
-            # [修正] 這裡改用 set_font_size 避免 TypeError
             pdf.set_font_size(10)
             pdf.set_text_color(100, 100, 100)
             pdf.multi_cell(0, 8, f"解析: {item['detail']}")
@@ -236,7 +253,6 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
             else: pdf.set_font("Arial", '', 14)
             pdf.ln(5)
 
-    # 圖片試題區
     if uploaded_images:
         pdf.add_page()
         if font_ready: pdf.set_font("TaipeiSans", '', 16)
@@ -264,7 +280,7 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
 # ==========================================
 
 def main():
-    st.title("🤖 全方位國中數學出題系統 (AI 穩定版)")
+    st.title("🤖 全方位國中數學出題系統 (AI 終極版)")
     
     if "exam_data" not in st.session_state: st.session_state["exam_data"] = []
     if "ai_generated_questions" not in st.session_state: st.session_state["ai_generated_questions"] = []
@@ -278,31 +294,25 @@ def main():
         else:
             api_key = st.text_input("Google API Key", type="password")
         
-        # [New] 模型自動偵測 (解決 404 問題)
-        model_options = ["models/gemini-1.5-flash", "models/gemini-pro", "models/gemini-1.5-pro"]
+        # 自動偵測模型
+        model_options = ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]
         selected_model = model_options[0]
         
         if api_key and HAS_GENAI:
             try:
                 genai.configure(api_key=api_key)
-                # 嘗試列出模型
                 models = list(genai.list_models())
-                available_models = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
-                if available_models:
-                    # 優先找 flash, 否則找 pro
+                available = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
+                if available:
                     default_idx = 0
-                    for i, m in enumerate(available_models):
-                        if "flash" in m: 
-                            default_idx = i
-                            break
-                    model_options = available_models
-                    selected_model = st.selectbox("選擇 AI 模型", model_options, index=default_idx)
+                    for i, m in enumerate(available):
+                        if "flash" in m: default_idx = i; break
+                    model_options = available
+                    selected_model = st.selectbox("AI 模型", model_options, index=default_idx)
                 else:
-                    st.warning("⚠️ 無法取得模型列表，使用預設值。")
-                    selected_model = st.selectbox("選擇 AI 模型", model_options)
-            except Exception as e:
-                st.error(f"連線失敗，請檢查 API Key: {e}")
-                selected_model = st.selectbox("選擇 AI 模型 (離線)", model_options)
+                    selected_model = st.selectbox("AI 模型 (預設)", model_options)
+            except:
+                selected_model = st.selectbox("AI 模型 (離線)", model_options)
         
         custom_title = st.text_input("試卷標題", value="會考衝刺練習")
         uploaded_files = st.file_uploader("上傳考題", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
@@ -334,13 +344,12 @@ def main():
                 for idx, img_file in enumerate(uploaded_files):
                     status_text.text(f"🤖 AI 分析第 {idx+1}/{len(uploaded_files)} 題...")
                     
-                    # [關鍵修正] 加入緩衝時間，解決 429 錯誤
-                    time.sleep(2) 
-                    
+                    time.sleep(1) # 基礎緩衝
                     ai_text, error = get_ai_variation(img_file, api_key, selected_model)
                     
                     if error:
-                        st.error(f"第 {idx+1} 張失敗: {error}")
+                        # 錯誤不中斷，僅顯示警告
+                        st.warning(f"第 {idx+1} 張圖片分析略過: {error}")
                     else:
                         new_q = parse_ai_response(ai_text)
                         new_q["source_img_idx"] = idx 
