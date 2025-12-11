@@ -25,7 +25,7 @@ if os.path.exists(font_path):
 # Part 0: AI 核心邏輯 (Gemini Integration)
 # ==========================================
 
-def get_ai_variation(image_file, api_key):
+def get_ai_variation(image_file, api_key, model_name):
     """
     使用 Google Gemini Vision 模型分析圖片並生成變體
     """
@@ -34,7 +34,8 @@ def get_ai_variation(image_file, api_key):
     
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # 使用使用者選擇的模型
+        model = genai.GenerativeModel(model_name)
         
         # 處理圖片指針，確保從頭讀取
         image_file.seek(0)
@@ -297,6 +298,31 @@ def main():
         else:
             api_key = st.text_input("Google API Key", type="password")
         
+        # [NEW] 自動偵測並讓使用者選擇模型
+        model_options = ["models/gemini-1.5-flash"] # 預設值
+        selected_model = model_options[0]
+        
+        if api_key:
+            try:
+                genai.configure(api_key=api_key)
+                # 列出所有可用模型
+                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                if available_models:
+                    model_options = available_models
+                    # 嘗試優先選用 flash 模型
+                    default_idx = 0
+                    for i, m in enumerate(model_options):
+                        if "flash" in m:
+                            default_idx = i
+                            break
+                    selected_model = st.selectbox("選擇 AI 模型", model_options, index=default_idx)
+                else:
+                    st.warning("⚠️ 未找到支援 generateContent 的模型，將使用預設值。")
+                    selected_model = st.selectbox("選擇 AI 模型 (預設)", model_options)
+            except Exception as e:
+                st.error(f"無法取得模型列表: {e}")
+                selected_model = st.selectbox("選擇 AI 模型 (連線失敗)", model_options)
+        
         custom_title = st.text_input("試卷標題", value="會考衝刺練習")
         
         st.subheader("1. 上傳考題圖片")
@@ -335,8 +361,8 @@ def main():
                 for idx, img_file in enumerate(uploaded_files):
                     status_text.text(f"🤖 AI 正在分析第 {idx+1}/{len(uploaded_files)} 張圖片...")
                     
-                    # 呼叫 Gemini
-                    ai_text, error = get_ai_variation(img_file, api_key)
+                    # 呼叫 Gemini (傳入選擇的模型)
+                    ai_text, error = get_ai_variation(img_file, api_key, selected_model)
                     
                     if error:
                         st.error(f"第 {idx+1} 張圖片分析失敗: {error}")
