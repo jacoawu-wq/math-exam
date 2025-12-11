@@ -395,33 +395,38 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
     pdf.cell(0, 10, full_title, ln=True, align='C')
     pdf.ln(10)
     
-    # 1. 自動生成試題區
-    for idx, item in enumerate(exam_data):
-        clean_q = item['question'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\times', 'x').replace('\\div', '÷').replace('\\le', '<=').replace('\\ge', '>=')
-        clean_a = item['answer'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\pi', 'π').replace('\\times', 'x')
-        
-        # 標題縮寫
-        topic_show = item['topic']
-        if "🔥" in topic_show:
-            topic_show = "進階"
-        elif "-" in topic_show:
-            topic_show = topic_show.split('-')[1]
+    # 1. 自動生成試題區 (只有當有題目時才生成)
+    if exam_data:
+        for idx, item in enumerate(exam_data):
+            clean_q = item['question'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\times', 'x').replace('\\div', '÷').replace('\\le', '<=').replace('\\ge', '>=')
+            clean_a = item['answer'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\pi', 'π').replace('\\times', 'x')
             
-        question_text = f"Q{idx+1}. [{topic_show}] {clean_q}"
-        pdf.multi_cell(0, 10, question_text)
-        
-        if mode == "student":
-            pdf.ln(25) 
-        else:
-            pdf.set_text_color(255, 0, 0)
-            pdf.multi_cell(0, 8, f"Ans: {clean_a}")
-            pdf.set_font_size(10)
-            pdf.set_text_color(100, 100, 100)
-            pdf.multi_cell(0, 8, f"解析: {item['detail']}")
-            pdf.set_text_color(0, 0, 0)
-            if font_ready: pdf.set_font("TaipeiSans", '', 14)
-            else: pdf.set_font("Arial", '', 14)
-            pdf.ln(5)
+            # 標題縮寫
+            topic_show = item['topic']
+            if "🔥" in topic_show:
+                topic_show = "進階"
+            elif "-" in topic_show:
+                topic_show = topic_show.split('-')[1]
+                
+            question_text = f"Q{idx+1}. [{topic_show}] {clean_q}"
+            pdf.multi_cell(0, 10, question_text)
+            
+            if mode == "student":
+                pdf.ln(25) 
+            else:
+                pdf.set_text_color(255, 0, 0)
+                pdf.multi_cell(0, 8, f"Ans: {clean_a}")
+                pdf.set_font_size(10)
+                pdf.set_text_color(100, 100, 100)
+                pdf.multi_cell(0, 8, f"解析: {item['detail']}")
+                pdf.set_text_color(0, 0, 0)
+                if font_ready: pdf.set_font("TaipeiSans", '', 14)
+                else: pdf.set_font("Arial", '', 14)
+                pdf.ln(5)
+    else:
+        # 若沒有隨機題目，顯示一個簡單提示
+        if not uploaded_images:
+            pdf.cell(0, 10, "本試卷無隨機題目。", ln=True)
 
     # 2. 圖片試題區 (新增功能)
     if uploaded_images:
@@ -510,24 +515,39 @@ def main():
         st.session_state["exam_data"] = []
     
     if generate_btn:
-        if not selected_topics:
-            st.error("請至少選擇一個單元！")
+        # 修改邏輯：只要選了單元 OR 上傳了圖片，就可以生成
+        if not selected_topics and not uploaded_files:
+            st.error("請至少選擇一個單元或上傳圖片！")
         else:
-            with st.spinner("正在生成多變素養題..."):
-                st.session_state["exam_data"] = generate_exam_data(selected_topics, num_questions)
-            st.success(f"成功生成 {len(st.session_state['exam_data'])} 題！")
+            if selected_topics:
+                with st.spinner("正在生成多變素養題..."):
+                    st.session_state["exam_data"] = generate_exam_data(selected_topics, num_questions)
+            else:
+                # 沒選單元但有圖片 -> 清空隨機題數據，以免殘留
+                st.session_state["exam_data"] = []
+            
+            # 成功訊息
+            msg = "成功生成！"
+            if st.session_state["exam_data"]:
+                 msg += f" (隨機題: {len(st.session_state['exam_data'])} 題)"
+            if uploaded_files:
+                 msg += f" (圖片題: {len(uploaded_files)} 張)"
+            st.success(msg)
 
-    if st.session_state["exam_data"]:
+    # 修改顯示條件：只要有隨機題 OR 有上傳圖片，就顯示預覽/下載區
+    if st.session_state["exam_data"] or uploaded_files:
         st.subheader(f"👀 {custom_title} - 試題預覽")
         
-        for i, q in enumerate(st.session_state["exam_data"][:3]):
-            with st.expander(f"Q{i+1} [{q['topic']}]"):
-                st.write(f"**題目**： {q['question']}")
-                st.write(f"**答案**： {q['answer']}")
-                st.caption(f"解析： {q['detail']}")
-        
-        if len(st.session_state["exam_data"]) > 3:
-            st.info(f"... 還有 {len(st.session_state['exam_data'])-3} 題，請下載 PDF 查看完整版。")
+        if st.session_state["exam_data"]:
+            for i, q in enumerate(st.session_state["exam_data"][:3]):
+                with st.expander(f"Q{i+1} [{q['topic']}]"):
+                    st.write(f"**題目**： {q['question']}")
+                    st.write(f"**答案**： {q['answer']}")
+                    st.caption(f"解析： {q['detail']}")
+            if len(st.session_state["exam_data"]) > 3:
+                st.info(f"... 還有 {len(st.session_state['exam_data'])-3} 題，請下載 PDF 查看完整版。")
+        else:
+            st.info("本次未選擇隨機題目單元，僅包含上傳之圖片考題。")
             
         if uploaded_files:
             st.success(f"另有 {len(uploaded_files)} 張圖片考題將合併於 PDF 後方。")
