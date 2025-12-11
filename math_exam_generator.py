@@ -87,11 +87,116 @@ def generate_geometry_basic():
     return {"topic": "基礎-幾何圖形", "question": q_str, "answer": ans_str, "detail": detail}
 
 # ==========================================
-# Part 2: 歷屆試題還原 (Real Exam Restored)
+# Part 2: 資料解讀與表格題 (New! Table-Based Questions)
+# ==========================================
+
+def generate_table_poll_adjustment():
+    """表格題：民調調整倍率 (參考上傳圖片 11)"""
+    # 隨機產生人口占比 (總和 100%)
+    pop_18 = random.choice([20, 30, 40])
+    pop_40 = random.choice([30, 40])
+    pop_60 = 100 - pop_18 - pop_40
+    
+    # 隨機產生調查占比 (總和 100%，且與人口不同)
+    sur_18 = random.choice([10, 20])
+    sur_40 = random.choice([30, 40, 50])
+    sur_60 = 100 - sur_18 - sur_40
+    
+    # 目標組別 (隨機問其中一組的調整倍率)
+    target_group = random.choice(["18~39歲", "40~59歲", "60歲以上"])
+    
+    if target_group == "18~39歲":
+        pop, sur = pop_18, sur_18
+    elif target_group == "40~59歲":
+        pop, sur = pop_40, sur_40
+    else:
+        pop, sur = pop_60, sur_60
+        
+    rate = pop / sur
+    
+    # 建立 Markdown 表格字串
+    table_md = f"""
+| 組別 | 人口占比 | 調查占比 | 調整倍率 |
+| :---: | :---: | :---: | :---: |
+| 18~39歲組 | {pop_18}% | {sur_18}% | ? |
+| 40~59歲組 | {pop_40}% | {sur_40}% | ... |
+| 60歲以上組 | {pop_60}% | {sur_60}% | ... |
+| **總計** | **100%** | **100%** | |
+    """
+    
+    q_str = (f"某民調公司依年齡分3組，因受訪者分佈不均，利用「調整倍率」修正結果。\n"
+             f"已知公式：**調整倍率 = 該組人口占比 / 該組調查占比**。\n\n"
+             f"請參考下表，計算 **{target_group}組** 的調整倍率是多少？\n"
+             f"{table_md}")
+             
+    ans_str = f"{rate:.1f} (或 {pop}/{sur})"
+    detail = f"{target_group}的人口是 {pop}%，調查是 {sur}%。\n調整倍率 = {pop}% ÷ {sur}% = {rate}。"
+    
+    return {"topic": "📊 資料解讀-民調倍率", "question": q_str, "answer": ans_str, "detail": detail}
+
+def generate_table_bicycle_gear():
+    """表格題：腳踏車齒輪比 (參考上傳圖片 10)"""
+    # 隨機產生齒數
+    front_gears = sorted(random.sample([20, 22, 30, 32, 40, 44], 3))
+    rear_gears = sorted(random.sample([12, 14, 16, 18, 20, 24, 28], 5))
+    
+    # 建立 Markdown 表格
+    front_str = "、".join(map(str, front_gears))
+    rear_str = "、".join(map(str, rear_gears))
+    
+    table_md = f"""
+| 位置 | 齒數規格 |
+| :--- | :--- |
+| **前齒輪** | {front_str} 齒 |
+| **後齒輪** | {rear_str} 齒 |
+    """
+    
+    # 設計題目：比較費力程度
+    # 齒輪比 = 前 / 後。 比值越大越費力(騎越快)，比值越小越省力。
+    f1, r1 = random.choice(front_gears), random.choice(rear_gears)
+    ratio1 = f1 / r1
+    
+    # 生成一個選項，讓它更費力 (比值更大) 或 更省力
+    mode = random.choice(["更費力", "更省力"])
+    
+    q_str = (f"小桃的變速自行車齒輪規格如下表所示。已知 **齒輪比 = 前齒輪齒數 / 後齒輪齒數**，"
+             f"且齒輪比越大踩起來越費力，越小越省力。\n\n"
+             f"{table_md}\n"
+             f"若她原本使用「前 {f1} / 後 {r1}」的組合，現在想切換成一個 **{mode}** 的組合，"
+             f"下列哪一種配置是正確的？")
+    
+    # 尋找答案
+    valid_answers = []
+    for f in front_gears:
+        for r in rear_gears:
+            if f == f1 and r == r1: continue
+            r_new = f / r
+            if mode == "更費力" and r_new > ratio1:
+                valid_answers.append(f"前 {f} / 後 {r}")
+            elif mode == "更省力" and r_new < ratio1:
+                valid_answers.append(f"前 {f} / 後 {r}")
+    
+    if not valid_answers:
+        # 防呆：如果找不到，就重生成簡單的算術題
+        q_str = f"請計算當前齒輪為 {f1}，後齒輪為 {r1} 時，齒輪比為何？\n{table_md}"
+        ans_str = f"{ratio1:.2f}"
+        detail = f"齒輪比 = {f1} ÷ {r1} ≈ {ratio1:.2f}"
+    else:
+        # 隨機選一個正確答案顯示
+        correct_ans = random.choice(valid_answers)
+        ans_str = f"例如：{correct_ans} (還有其他可能)"
+        detail = (f"原組合齒輪比 = {f1}/{r1} ≈ {ratio1:.2f}。\n"
+                  f"要{mode}，需找齒輪比 {'大於' if mode=='更費力' else '小於'} {ratio1:.2f} 的組合。\n"
+                  f"正確選項之一為 {correct_ans}。")
+
+    return {"topic": "🚲 資料解讀-齒輪比", "question": q_str, "answer": ans_str, "detail": detail}
+
+# ==========================================
+# Part 3: 歷屆試題還原 (Real Exam Restored)
 # ==========================================
 
 def generate_real_exam_exponents():
-    """還原題型：指數律運算 (參考 Q1)"""
+    """還原題型：指數律運算"""
     base = random.choice([2, 3, 5, 7, 10])
     n1 = random.randint(5, 15)
     n2 = random.randint(2, 5)
@@ -103,13 +208,11 @@ def generate_real_exam_exponents():
     return {"topic": "🔥 歷屆-指數律", "question": q_str, "answer": ans_str, "detail": detail}
 
 def generate_real_exam_polynomial():
-    """還原題型：多項式減法 (參考 Q2)"""
+    """還原題型：多項式減法"""
     a = random.randint(2, 9)
     b = random.randint(-9, -1)
     c = random.randint(1, 9)
     d = random.randint(-9, -1)
-    poly1 = f"{a}x^2 {b}x"
-    poly2 = f"{c} {d}x"
     q_str = f"計算 $({a}x^2 + ({b}x)) - ({c} + ({d}x))$ 的結果，與下列何者相同？"
     coeff_x = b - d
     coeff_c = -c
@@ -120,7 +223,7 @@ def generate_real_exam_polynomial():
     return {"topic": "🔥 歷屆-多項式", "question": q_str, "answer": ans_str, "detail": detail}
 
 def generate_real_exam_system_val():
-    """還原題型：聯立方程式求代數值 (參考 Q4)"""
+    """還原題型：聯立方程式求代數值"""
     x = random.randint(-5, 5)
     y = random.randint(-5, 5)
     a1 = random.randint(10, 40)
@@ -140,16 +243,15 @@ def generate_real_exam_system_val():
     return {"topic": "🔥 歷屆-聯立方程式", "question": q_str, "answer": ans_str, "detail": detail}
 
 def generate_real_exam_radicals():
-    """還原題型：根號運算 (參考 Q8)"""
-    d = random.choice([2, 3, 5])
-    b = random.choice([2, 3, 5])
-    if b == d: b = 7
+    """還原題型：根號運算"""
     a = random.randint(2, 4)
+    b = random.choice([2, 3, 5])
     c = random.choice([6, 10, 15])
     d = random.choice([2, 3, 5])
     q_str = f"計算 $({a}\\sqrt{{{b}}} + \\sqrt{{{c}}}) \\times \\sqrt{{{d}}}$ 的結果。"
     term1_inner = b * d
     term2_inner = c * d
+    # 簡單化簡
     def simplify_sqrt(val):
         root = 1
         for i in range(2, int(math.sqrt(val)) + 1):
@@ -171,10 +273,9 @@ def generate_real_exam_radicals():
     return {"topic": "🔥 歷屆-根號運算", "question": q_str, "answer": ans_str, "detail": detail}
 
 def generate_real_exam_quadratic_shift():
-    """還原題型：二次函數平移 (參考 Q21)"""
+    """還原題型：二次函數平移"""
     h = random.randint(-9, 9)
     k = random.randint(-10, 10)
-    a = -1 
     shift = random.randint(2, 10)
     direction = random.choice(["右", "左"])
     h_sign = "+" if h >= 0 else "-"
@@ -191,52 +292,6 @@ def generate_real_exam_quadratic_shift():
     return {"topic": "🔥 歷屆-二次函數平移", "question": q_str, "answer": ans_str, "detail": detail}
 
 # ==========================================
-# Part 3: 進階生活應用 (Advanced Scenario)
-# ==========================================
-
-def generate_advanced_inequality():
-    """進階-生活應用(不等式)"""
-    scenario = random.choice(['ticket', 'mobile_plan'])
-    if scenario == 'ticket':
-        price = random.choice([100, 200, 250, 300, 500])
-        group_limit = random.choice([20, 30, 40, 50])
-        discount_off = random.choice([10, 20, 30]) 
-        discount_rate = (100 - discount_off) / 100
-        threshold = math.ceil(group_limit * discount_rate)
-        q_str = (f"遊樂園門票每張 {price} 元，{group_limit} 人以上(含)團體票打 {10-discount_off//10} 折。"
-                 f"若團體不足 {group_limit} 人，人數至少多少時，直接買 {group_limit} 張團體票反而划算？")
-        ans_str = f"{threshold} 人"
-        detail = f"設人數 x。$x \\times {price} > {group_limit} \\times {price} \\times {discount_rate}$。"
-    else:
-        base_a = random.randint(300, 600)
-        rate_a = random.randint(2, 4)
-        base_b = random.randint(100, 200)
-        rate_b = random.randint(6, 9)
-        diff_base = base_a - base_b
-        diff_rate = rate_b - rate_a
-        threshold = math.ceil(diff_base / diff_rate)
-        q_str = (f"電信方案 A 月租費 {base_a} 元，每分鐘通話 {rate_a} 元；"
-                 f"方案 B 月租費 {base_b} 元，每分鐘通話 {rate_b} 元。"
-                 f"當每月通話時間超過多少分鐘時，選擇方案 A 會比較划算？")
-        ans_str = f"{threshold} 分鐘"
-        detail = f"設通話 x 分鐘。${base_a} + {rate_a}x < {base_b} + {rate_b}x$，移項解 x。"
-    return {"topic": "進階-不等式應用", "question": q_str, "answer": ans_str, "detail": detail}
-
-def generate_advanced_sequence():
-    """進階-規律探索(數列)"""
-    shape = random.choice(['正方形', '正三角形', '正六邊形'])
-    if shape == '正方形': a1, d = 4, 3
-    elif shape == '正三角形': a1, d = 3, 2
-    else: a1, d = 6, 5
-    n = random.randint(10, 50)
-    q_str = (f"用火柴棒排連鎖{shape}，排1個需{a1}根，排2個需{a1+d}根... "
-             f"請問排 {n} 個連鎖{shape}共需幾根火柴棒？")
-    ans_val = a1 + (n - 1) * d
-    ans_str = f"{ans_val} 根"
-    detail = f"等差數列首項 {a1}，公差 {d}。公式 $a_n = a_1 + (n-1)d$。"
-    return {"topic": "進階-數列規律", "question": q_str, "answer": ans_str, "detail": detail}
-
-# ==========================================
 # Part 4: 題型策略地圖
 # ==========================================
 
@@ -245,15 +300,15 @@ TOPIC_MAPPING = {
     "基礎 - 數與量": generate_number_basic,
     "基礎 - 代數": generate_linear_algebra_basic,
     "基礎 - 幾何": generate_geometry_basic,
-    # 歷屆改編區 (New!)
+    # 資料解讀區 (New!)
+    "📊 素養 - 民調調整倍率 (表格)": generate_table_poll_adjustment,
+    "🚲 素養 - 腳踏車齒輪比 (表格)": generate_table_bicycle_gear,
+    # 歷屆改編區
     "🔥 歷屆 - 指數律運算": generate_real_exam_exponents,
     "🔥 歷屆 - 多項式加減": generate_real_exam_polynomial,
     "🔥 歷屆 - 聯立方程式求值": generate_real_exam_system_val,
     "🔥 歷屆 - 根號運算": generate_real_exam_radicals,
     "🔥 歷屆 - 二次函數平移": generate_real_exam_quadratic_shift,
-    # 進階應用區
-    "進階 - 不等式應用": generate_advanced_inequality,
-    "進階 - 數列規律": generate_advanced_sequence,
 }
 
 def generate_exam_data(selected_topics, num_questions):
@@ -267,7 +322,7 @@ def generate_exam_data(selected_topics, num_questions):
     return exam_list
 
 # ==========================================
-# Part 5: PDF 匯出功能 (保留備用)
+# Part 5: PDF 匯出功能
 # ==========================================
 
 class PDFExport(FPDF):
@@ -306,13 +361,17 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
     # 1. 自動生成試題區
     if exam_data:
         for idx, item in enumerate(exam_data):
-            clean_q = item['question'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\times', 'x').replace('\\div', '÷').replace('\\le', '<=').replace('\\ge', '>=')
-            clean_a = item['answer'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\pi', 'π').replace('\\times', 'x')
+            # 處理 LaTeX 與表格
+            # 注意：FPDF 支援度有限，這裡主要做純文字清理，表格無法直接轉 PDF 表格
+            # 所以 PDF 版只會顯示 "請見網頁版表格" 或簡單文字敘述
+            clean_q = item['question'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\times', 'x').replace('\\div', '÷')
+            clean_a = item['answer'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\pi', 'π')
             
-            topic_show = item['topic']
-            if "🔥" in topic_show: topic_show = "歷屆改編"
-            elif "進階" in topic_show: topic_show = "素養應用"
-            elif "-" in topic_show: topic_show = topic_show.split('-')[1]
+            # 偵測是否含有 Markdown 表格 (簡單判斷)
+            if "|" in clean_q:
+                clean_q = clean_q.split("|")[0] + "\n[圖表題，請參閱網頁版或附圖]"
+            
+            topic_show = item['topic'].split('-')[-1] if '-' in item['topic'] else item['topic']
             
             question_text = f"Q{idx+1}. [{topic_show}] {clean_q}"
             pdf.multi_cell(0, 10, question_text)
@@ -333,7 +392,7 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
         if not uploaded_images:
             pdf.cell(0, 10, "本試卷無隨機題目。", ln=True)
 
-    # 2. 圖片試題區 (修復：使用 uuid 產生唯一檔名，避免圖片重複)
+    # 2. 圖片試題區
     if uploaded_images:
         pdf.add_page()
         if font_ready: pdf.set_font("TaipeiSans", '', 16)
@@ -372,13 +431,13 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
 
 def main():
     st.title("📝 全方位國中數學出題系統 (Pro版)")
-    st.markdown("### 包含基礎觀念與 **🔥 歷屆試題還原** (上傳圖片即還原)")
+    st.markdown("### 包含基礎觀念、歷屆改編與 **📊 素養表格題**")
     st.markdown("---")
 
     all_topics = list(TOPIC_MAPPING.keys())
     if "selected_topics" not in st.session_state:
-        # 預設選一些基礎跟歷屆改編
-        st.session_state.selected_topics = [t for t in all_topics if "歷屆" in t][:3]
+        # 預設選一些素養題
+        st.session_state.selected_topics = [t for t in all_topics if "素養" in t]
 
     def toggle_all():
         if st.session_state.use_all_topics:
@@ -406,7 +465,7 @@ def main():
         num_questions = st.slider("題目數量", 5, 50, 10)
         generate_btn = st.button("🚀 建立新考卷", type="primary")
         
-        st.info("🔥 **新功能**：已將您的圖片試題轉化為可隨機變化的「歷屆改編」題型，勾選後即可無限生成！")
+        st.info("🔥 **新功能**：新增「表格資料解讀」題型，能自動產生民調倍率表與齒輪比表格！")
 
     if "exam_data" not in st.session_state:
         st.session_state["exam_data"] = []
@@ -416,7 +475,7 @@ def main():
             st.error("請至少選擇一個單元或上傳圖片！")
         else:
             if selected_topics:
-                with st.spinner("正在生成歷屆改編題..."):
+                with st.spinner("正在生成素養題..."):
                     st.session_state["exam_data"] = generate_exam_data(selected_topics, num_questions)
             else:
                 st.session_state["exam_data"] = []
@@ -429,14 +488,10 @@ def main():
     if st.session_state["exam_data"] or uploaded_files:
         st.markdown(f"## 🏫 {custom_title}")
         
-        # 1. 控制列：顯示解答開關 + PDF 下載
         col_ctrl1, col_ctrl2 = st.columns([2, 1])
-        
         with col_ctrl1:
             show_answers = st.checkbox("🔍 顯示解答與解析 (教師模式)", value=False)
-        
         with col_ctrl2:
-            # 仍然保留 PDF 下載功能，以防萬一
             if st.button("📥 產生 PDF (備用)"):
                 safe_title = custom_title.replace(" ", "_")
                 pdf_bytes = create_pdf(st.session_state["exam_data"], custom_title, mode="parent", uploaded_images=uploaded_files)
@@ -444,25 +499,22 @@ def main():
 
         st.divider()
 
-        # 2. 顯示隨機生成題目
         if st.session_state["exam_data"]:
             st.subheader("第一部分：隨機試題")
             for i, q in enumerate(st.session_state["exam_data"]):
-                # 題目區
                 topic_display = q['topic'].split('-')[-1] if '-' in q['topic'] else q['topic']
                 st.markdown(f"#### Q{i+1}. [{topic_display}]")
-                st.info(q['question'])
+                # [關鍵修正] 使用 st.markdown 才能正確顯示表格
+                st.markdown(q['question'])
                 
-                # 答案區 (根據開關顯示)
                 if show_answers:
                     with st.expander("查看解答", expanded=True):
                         st.success(f"**答案：** {q['answer']}")
                         st.caption(f"**解析：** {q['detail']}")
                 else:
                     st.write("(請在此計算作答...)")
-                    st.write("---") # 分隔線
+                    st.write("---")
 
-        # 3. 顯示上傳圖片
         if uploaded_files:
             st.subheader("第二部分：圖片試題")
             for img_file in uploaded_files:
