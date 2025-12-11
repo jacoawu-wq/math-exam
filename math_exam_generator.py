@@ -29,7 +29,7 @@ except ImportError:
     st.error("⚠️ 系統缺少 google-generativeai。請檢查 requirements.txt，並請嘗試 Reboot App。")
 
 # 1. 設定頁面配置
-st.set_page_config(page_title="全方位數學自動出題系統 (AI 省流版)", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="全方位數學自動出題系統 (AI 旗艦版)", layout="wide", page_icon="🛡️")
 
 # 字型設定
 font_path = 'TaipeiSansTCBeta-Regular.ttf'
@@ -56,7 +56,7 @@ def get_ai_variation(image_file, api_key, model_name, num_variations=1):
         image_file.seek(0)
         img = Image.open(image_file)
         
-        # [關鍵更新] Prompt 支援一次生成多題
+        # Prompt 支援一次生成多題
         prompt = f"""
         你是一位專業的國中數學老師。請分析這張圖片中的數學題目：
         1. 找出核心觀念。
@@ -92,6 +92,7 @@ def get_ai_variation(image_file, api_key, model_name, num_variations=1):
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
         
+        # 重試機制 (針對 429 錯誤)
         max_retries = 3
         for attempt in range(max_retries + 1):
             try:
@@ -100,11 +101,12 @@ def get_ai_variation(image_file, api_key, model_name, num_variations=1):
             except Exception as e:
                 if "429" in str(e):
                     if attempt < max_retries:
+                        # 遞增等待時間: 10s, 20s, 30s
                         wait_time = (attempt + 1) * 10
                         time.sleep(wait_time) 
                         continue
                     else:
-                        return None, "API 額度已滿 (429)，請稍後再試。"
+                        return None, "API 額度已滿 (429)。請讓程式休息 2 分鐘後再試。"
                 else:
                     raise e
 
@@ -347,19 +349,20 @@ def main():
                 selected_model = st.selectbox("AI 模型 (離線)", model_options)
         
         custom_title = st.text_input("試卷標題", value="會考衝刺練習")
+        
+        st.subheader("1. 上傳考題圖片")
         uploaded_files = st.file_uploader("上傳考題", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
         
-        st.divider()
-        
-        # [New] AI 批次生成設定 (增加上限至10)
-        st.subheader("💡 AI 變題設定")
-        ai_variations = st.slider("每張圖要變出幾道新題? (單次請求生成多題)", 1, 10, 1, help="設定每張上傳的圖片，AI 要模仿出幾道類似題。一次生成多題可節省 API 額度並加快速度。")
-        
-        st.divider()
-        st.subheader("🎲 隨機題目")
+        st.subheader("2. 隨機題庫 (非AI)")
         all_topics = list(TOPIC_MAPPING.keys())
-        selected_topics = st.multiselect("隨機單元", options=all_topics)
-        num_questions = st.slider("隨機題數", 0, 20, 5)
+        selected_topics = st.multiselect("選擇單元", options=all_topics)
+        
+        st.divider()
+        st.subheader("🔢 總題數設定 (最下方)")
+        
+        # [修改處] 將題數設定統一移至最下方，且允許 AI 題目數設為 0~10
+        ai_variations = st.slider("👉 每張圖片生成幾題 AI 仿題?", 1, 10, 1, help="設為 1 代表每張圖產生 1 題類似題。建議設 2~3 以節省 API 請求次數。")
+        num_questions = st.slider("👉 隨機基礎題數", 0, 50, 5)
         
         generate_btn = st.button("🚀 建立考卷", type="primary")
 
