@@ -9,278 +9,176 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.font_manager as fm
 import io
+import google.generativeai as genai
+from PIL import Image
 
 # 1. 設定頁面配置
-st.set_page_config(page_title="全方位數學自動出題系統", layout="wide", page_icon="📝")
+st.set_page_config(page_title="全方位數學自動出題系統 (AI版)", layout="wide", page_icon="🤖")
 
-# 嘗試載入中文字型給 Matplotlib 使用 (用於繪製圖表中的中文)
-# 預設尋找根目錄下的台北黑體，若無則回退到預設字體
+# 字型設定
 font_path = 'TaipeiSansTCBeta-Regular.ttf'
 if os.path.exists(font_path):
     font_prop = fm.FontProperties(fname=font_path)
     plt.rcParams['font.family'] = font_prop.get_name()
-else:
-    # 若無字型檔，避免繪圖亂碼，可設定英文 fallback 或忽略
-    pass
+
+# ==========================================
+# Part 0: AI 核心邏輯 (Gemini Integration)
+# ==========================================
+
+def get_ai_variation(image_file, api_key):
+    """
+    使用 Google Gemini Vision 模型分析圖片並生成變體
+    """
+    if not api_key:
+        return None, "請先輸入 Google API Key"
+    
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # 處理圖片指針，確保從頭讀取
+        image_file.seek(0)
+        img = Image.open(image_file)
+        
+        prompt = """
+        你是一位專業的國中數學老師。請執行以下任務：
+        1. 分析這張圖片中的數學題目，找出它考的核心觀念。
+        2. 根據這個觀念，「重新設計」一道新的題目。
+           - 邏輯要相同，但數字必須改變。
+           - 題目敘述要通順繁體中文。
+           - 不要只給答案，要完整的題目描述。
+        3. 請依照以下格式輸出（不要輸出 markdown 標記，只要純文字）：
+        
+        [題目]
+        (這裡放新題目)
+        
+        [答案]
+        (這裡放答案)
+        
+        [解析]
+        (這裡放計算過程)
+        """
+        
+        response = model.generate_content([prompt, img])
+        return response.text, None
+            
+    except Exception as e:
+        return None, f"AI 連線錯誤: {str(e)}"
+
+def parse_ai_response(text):
+    """簡單解析 AI 回傳的格式"""
+    try:
+        parts = text.split('[答案]')
+        question_part = parts[0].replace('[題目]', '').strip()
+        
+        remain = parts[1]
+        parts2 = remain.split('[解析]')
+        answer_part = parts2[0].strip()
+        detail_part = parts2[1].strip()
+        
+        return {
+            "topic": "🤖 AI-仿題生成",
+            "question": question_part,
+            "answer": answer_part,
+            "detail": detail_part
+        }
+    except:
+        return {
+            "topic": "🤖 AI-仿題生成",
+            "question": text,
+            "answer": "詳見解析",
+            "detail": "AI 生成內容格式較為自由，請參考題目敘述。"
+        }
 
 # ==========================================
 # Part 1: 基礎題目生成邏輯
 # ==========================================
 
 def generate_number_basic():
-    """數與量基礎：四則運算、科學記號、指數律"""
     sub_type = random.choice(['calc', 'sci', 'index'])
     if sub_type == 'calc':
         a, b, c = random.randint(-20, 20), random.randint(-20, 20), random.randint(-10, 10)
         if c == 0: c = 1
         op1, op2 = random.choice(['+', '-']), random.choice(['*', '-'])
         q_str = f"計算： ${a} {op1} ({b}) {op2} ({c})$"
-        val_b, val_c = b, c
-        res = val_b * val_c if op2 == '*' else val_b - val_c
-        final = a + res if op1 == '+' else a - res
-        ans_str = f"{final}"
+        ans_str = str(a + (b * c if op2 == '*' else b - c) if op1 == '+' else a - (b * c if op2 == '*' else b - c))
         detail = "先乘除後加減，注意正負號變化。"
     elif sub_type == 'sci':
-        base = random.randint(1, 9)
-        power = random.randint(-8, 8)
+        base = random.randint(1, 9); power = random.randint(-8, 8)
         num = base * (10**power)
-        if power >= 0: q_str = f"將整數 {num} 以科學記號表示。"
-        else: q_str = f"將小數 {num:.8f}".rstrip('0') + " 以科學記號表示。"
+        q_str = f"將整數 {num} 以科學記號表示。" if power >=0 else f"將小數 {num:.8f}".rstrip('0') + " 以科學記號表示。"
         ans_str = f"${base} \\times 10^{{{power}}}$"
-        detail = "科學記號形式為 $a \\times 10^n$，其中 $1 \\le a < 10$。"
+        detail = "科學記號形式為 $a \\times 10^n$。"
     else:
-        base = random.randint(2, 5)
-        p1, p2 = random.randint(2, 5), random.randint(2, 5)
+        base = random.randint(2, 5); p1, p2 = random.randint(2, 5), random.randint(2, 5)
         q_str = f"化簡： $({base}^{{{p1}}})^{{{p2}}} \\div {base}^{{{p2}}}$"
-        final_p = p1 * p2 - p2
-        ans_str = f"${base}^{{{final_p}}}$"
-        detail = "利用指數律：$(a^m)^n = a^{mn}$ 以及 $a^m \\div a^n = a^{m-n}$。"
+        ans_str = f"${base}^{{{p1 * p2 - p2}}}$"
+        detail = "利用指數律運算。"
     return {"topic": "基礎-數與量", "question": q_str, "answer": ans_str, "detail": detail}
 
 def generate_linear_algebra_basic():
-    """一元一次方程式與不等式 (基礎)"""
-    x = random.randint(-15, 15)
-    a = random.choice([-5, -4, -3, -2, 2, 3, 4, 5])
-    b = random.randint(-20, 20)
-    q_type = random.choice(['eq', 'ineq'])
-    if q_type == 'eq':
-        c = a * x + b
-        b_sign = "+" if b >= 0 else "-"
-        q_str = f"解方程式： ${a}x {b_sign} {abs(b)} = {c}$"
-        ans_str = f"$x = {x}$"
-        detail = f"移項：${a}x = {c} - ({b}) = {c-b}$，故 $x = {x}$。"
-    else:
-        delta = random.randint(1, 10)
-        c = a * x + b - delta 
-        if a > 0:
-            q_str = f"解不等式： ${a}x + {b} > {c}$"
-            boundary = (c - b) / a
-            ans_str = f"$x > {boundary:.1f}$"
-            detail = "移項整理，注意若同除以負數，不等號方向要改變。"
-        else:
-            q_str = f"解不等式： ${a}x + {b} < {c}$"
-            boundary = (c - b) / a
-            ans_str = f"$x > {boundary:.1f}$"
-            detail = "係數為負數，移項除法時不等號方向改變 ($< \\rightarrow >$)。"
+    x = random.randint(-15, 15); a = random.choice([-5, -4, -3, -2, 2, 3, 4, 5]); b = random.randint(-20, 20)
+    c = a * x + b
+    b_sign = "+" if b >= 0 else "-"
+    q_str = f"解方程式： ${a}x {b_sign} {abs(b)} = {c}$"
+    ans_str = f"$x = {x}$"
+    detail = f"移項法則：${a}x = {c} - ({b})$。"
     return {"topic": "基礎-代數運算", "question": q_str, "answer": ans_str, "detail": detail}
 
 def generate_geometry_basic():
-    """幾何基礎 (勾股、內角)"""
-    g_type = random.choice(['pythagoras', 'angle'])
-    if g_type == 'pythagoras':
-        triples = [(3,4,5), (5,12,13), (6,8,10), (8,15,17)]
-        a, b, c = random.choice(triples)
-        q_str = f"直角三角形兩股長分別為 {a}, {b}，求斜邊長。"
-        ans_str = f"{c}"
-        detail = "畢氏定理：斜邊平方 = 兩股平方和 ($c^2 = a^2 + b^2$)。"
-    else:
-        a1, a2 = random.randrange(30, 80, 5), random.randrange(30, 80, 5)
-        q_str = f"三角形兩內角為 {a1}° 與 {a2}°，求第三個內角。"
-        ans_str = f"{180 - a1 - a2}°"
-        detail = "三角形內角和為 180 度。"
+    a1, a2 = random.randrange(30, 80, 5), random.randrange(30, 80, 5)
+    q_str = f"三角形兩內角為 {a1}° 與 {a2}°，求第三個內角。"
+    ans_str = f"{180 - a1 - a2}°"
+    detail = "三角形內角和為 180 度。"
     return {"topic": "基礎-幾何圖形", "question": q_str, "answer": ans_str, "detail": detail}
 
 # ==========================================
-# Part 2: 資料解讀、表格與【動態繪圖題】 (Visual Questions)
+# Part 2: 動態繪圖題
 # ==========================================
 
 def generate_visual_parking():
-    """🎨 動態繪圖題：停車位總長度 (參考上傳圖片 05)"""
-    # 1. 隨機生成題目變數
-    n_cars = random.randint(10, 30) # 車位數量
-    w_space = random.choice([200, 220, 250]) # 車位寬度
-    w_gap = random.choice([100, 120, 150]) # 下車區寬度
-    
-    # 邏輯：N個車位，相鄰共用下車區 => 頭尾各一個車位，中間有 N-1 個下車區
-    # 依據常見題意：車位-Gap-車位-Gap...-車位。 Gap數 = N-1
+    n_cars = random.randint(10, 30); w_space = random.choice([200, 220, 250]); w_gap = random.choice([100, 120, 150])
     total_width = n_cars * w_space + (n_cars - 1) * w_gap
-    
-    q_str = f"某園區規劃 {n_cars} 個無障礙停車位（如下圖），每個停車位寬 {w_space} 公分，" \
-            f"相鄰兩個車位中間設有寬 {w_gap} 公分的共用下車區。\n" \
-            f"請問圖中所有停車位及下車區的總寬度是多少公分？"
-    ans_str = f"{total_width} 公分"
-    detail = f"總寬 = (車位數 $\\times$ 車位寬) + ((車位數-1) $\\times$ 下車區寬)\n" \
-             f"= ${n_cars} \\times {w_space} + ({n_cars}-1) \\times {w_gap} = {n_cars*w_space} + { (n_cars-1)*w_gap } = {total_width}$"
+    q_str = f"某園區規劃 {n_cars} 個無障礙停車位（如下圖），車位寬 {w_space} cm，間隔 {w_gap} cm。求總寬度？"
+    ans_str = f"{total_width} cm"
+    detail = f"總寬 = {n_cars}x{w_space} + ({n_cars}-1)x{w_gap} = {total_width}"
 
-    # 2. 使用 Matplotlib 動態繪圖
-    # 建立畫布
     fig, ax = plt.subplots(figsize=(8, 2.5))
+    color_car, color_gap = '#b3d9ff', '#e6e6e6'
     
-    # 繪製示意圖 (畫出前兩個和最後一個，中間用省略號)
-    # 顏色與樣式
-    color_car = '#b3d9ff' # 淺藍
-    color_gap = '#e6e6e6' # 淺灰
-    
-    # Block 1: 第一個車位
     rect1 = patches.Rectangle((0, 0), w_space, 100, facecolor=color_car, edgecolor='black')
     ax.add_patch(rect1)
     ax.text(w_space/2, 50, f"車位\n{w_space}", ha='center', va='center', fontsize=10, fontproperties=font_prop if os.path.exists(font_path) else None)
     
-    # Gap 1: 第一個下車區
-    current_x = w_space
-    rect_g1 = patches.Rectangle((current_x, 0), w_gap, 100, facecolor=color_gap, hatch='//', edgecolor='black')
+    rect_g1 = patches.Rectangle((w_space, 0), w_gap, 100, facecolor=color_gap, hatch='//', edgecolor='black')
     ax.add_patch(rect_g1)
-    ax.text(current_x + w_gap/2, 50, f"下車\n{w_gap}", ha='center', va='center', fontsize=9, fontproperties=font_prop if os.path.exists(font_path) else None)
     
-    # Block 2: 第二個車位
-    current_x += w_gap
-    rect2 = patches.Rectangle((current_x, 0), w_space, 100, facecolor=color_car, edgecolor='black')
+    rect2 = patches.Rectangle((w_space+w_gap, 0), w_space, 100, facecolor=color_car, edgecolor='black')
     ax.add_patch(rect2)
-    ax.text(current_x + w_space/2, 50, "車位", ha='center', va='center', fontsize=10, fontproperties=font_prop if os.path.exists(font_path) else None)
     
-    # 省略號
-    current_x += w_space
-    ax.text(current_x + 50, 50, "......", ha='center', va='center', fontsize=20)
+    ax.text(w_space+w_gap+w_space+50, 50, "......", ha='center', va='center', fontsize=20)
     
-    # Block N: 最後一個車位 (畫在遠一點的地方示意)
-    final_x = current_x + 100
+    final_x = w_space+w_gap+w_space+100
     rect_n = patches.Rectangle((final_x, 0), w_space, 100, facecolor=color_car, edgecolor='black')
     ax.add_patch(rect_n)
     ax.text(final_x + w_space/2, 50, f"車位\n{n_cars}", ha='center', va='center', fontsize=10, fontproperties=font_prop if os.path.exists(font_path) else None)
     
-    # 設定圖表範圍與隱藏座標軸
     ax.set_xlim(-50, final_x + w_space + 50)
     ax.set_ylim(-20, 120)
     ax.axis('off')
     
-    # 將圖片存入記憶體 (BytesIO)
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight', dpi=100)
     plt.close(fig)
     buf.seek(0)
     
-    return {
-        "topic": "🎨 素養-圖形計算(停車位)",
-        "question": q_str,
-        "answer": ans_str,
-        "detail": detail,
-        "image_data": buf # 關鍵：將圖片物件傳回
-    }
-
-def generate_table_poll_adjustment():
-    """表格題：民調調整倍率"""
-    pop_18 = random.choice([20, 30, 40])
-    pop_40 = random.choice([30, 40])
-    pop_60 = 100 - pop_18 - pop_40
-    sur_18 = random.choice([10, 20])
-    sur_40 = random.choice([30, 40, 50])
-    sur_60 = 100 - sur_18 - sur_40
-    target_group = random.choice(["18~39歲", "40~59歲", "60歲以上"])
-    if target_group == "18~39歲": pop, sur = pop_18, sur_18
-    elif target_group == "40~59歲": pop, sur = pop_40, sur_40
-    else: pop, sur = pop_60, sur_60
-    rate = pop / sur
-    table_md = f"""
-| 組別 | 人口占比 | 調查占比 | 調整倍率 |
-| :---: | :---: | :---: | :---: |
-| 18~39歲組 | {pop_18}% | {sur_18}% | ? |
-| 40~59歲組 | {pop_40}% | {sur_40}% | ... |
-| 60歲以上組 | {pop_60}% | {sur_60}% | ... |
-| **總計** | **100%** | **100%** | |
-    """
-    q_str = (f"某民調公司依年齡分3組，利用「調整倍率」修正結果。公式：**調整倍率 = 人口占比 / 調查占比**。\n"
-             f"請參考下表，計算 **{target_group}組** 的調整倍率？\n{table_md}")
-    ans_str = f"{rate:.1f} (或 {pop}/{sur})"
-    detail = f"{target_group}人口 {pop}%，調查 {sur}%。調整倍率 = {pop}% ÷ {sur}% = {rate}。"
-    return {"topic": "📊 資料解讀-民調倍率", "question": q_str, "answer": ans_str, "detail": detail}
-
-def generate_table_bicycle_gear():
-    """表格題：腳踏車齒輪比"""
-    front_gears = sorted(random.sample([20, 22, 30, 32, 40, 44], 3))
-    rear_gears = sorted(random.sample([12, 14, 16, 18, 20, 24, 28], 5))
-    front_str = "、".join(map(str, front_gears))
-    rear_str = "、".join(map(str, rear_gears))
-    table_md = f"""
-| 位置 | 齒數規格 |
-| :--- | :--- |
-| **前齒輪** | {front_str} 齒 |
-| **後齒輪** | {rear_str} 齒 |
-    """
-    f1, r1 = random.choice(front_gears), random.choice(rear_gears)
-    ratio1 = f1 / r1
-    mode = random.choice(["更費力", "更省力"])
-    q_str = (f"變速自行車齒輪規格如下。已知 **齒輪比 = 前齒輪 / 後齒輪**，比值越大越費力。\n"
-             f"{table_md}\n若原組合為「前 {f1} / 後 {r1}」，想切換成 **{mode}** 的組合，下列何者正確？")
-    valid_answers = []
-    for f in front_gears:
-        for r in rear_gears:
-            if f == f1 and r == r1: continue
-            r_new = f / r
-            if (mode == "更費力" and r_new > ratio1) or (mode == "更省力" and r_new < ratio1):
-                valid_answers.append(f"前 {f} / 後 {r}")
-    
-    if not valid_answers:
-        q_str = f"請計算前 {f1} 後 {r1} 之齒輪比。\n{table_md}"
-        ans_str = f"{ratio1:.2f}"
-        detail = f"{f1}/{r1} = {ratio1:.2f}"
-    else:
-        correct_ans = random.choice(valid_answers)
-        ans_str = f"例如：{correct_ans}"
-        detail = f"原比值 {ratio1:.2f}。需找{'大於' if mode=='更費力' else '小於'}此值的組合。"
-    return {"topic": "🚲 資料解讀-齒輪比", "question": q_str, "answer": ans_str, "detail": detail}
-
-# ==========================================
-# Part 3: 歷屆試題還原 (Real Exam Restored)
-# ==========================================
-
-def generate_real_exam_exponents():
-    base = random.choice([2, 3, 5, 7, 10]); n1 = random.randint(5, 15); n2 = random.randint(2, 5); n3 = random.randint(3, 8)
-    q_str = f"算式 ${base}^{{{n1}}} \\times {base}^{{{n2}}} \\div {base}^{{{n3}}}$ 之值？"
-    ans_str = f"${base}^{{{n1+n2-n3}}}$"
-    return {"topic": "🔥 歷屆-指數律", "question": q_str, "answer": ans_str, "detail": "指數相乘相加，相除相減。"}
-
-def generate_real_exam_polynomial():
-    a = random.randint(2, 9); b = random.randint(-9, -1); c = random.randint(1, 9); d = random.randint(-9, -1)
-    q_str = f"計算 $({a}x^2 + ({b}x)) - ({c} + ({d}x))$ 的結果？"
-    ans_str = f"${a}x^2 {'+' if b-d>=0 else '-'} {abs(b-d)}x {'+' if -c>=0 else '-'} {abs(c)}$"
-    return {"topic": "🔥 歷屆-多項式", "question": q_str, "answer": ans_str, "detail": "去括號合併同類項。"}
-
-def generate_real_exam_system_val():
-    x = random.randint(-5, 5); y = random.randint(-5, 5)
-    a1 = random.randint(10, 40); b1 = random.randint(2, 9); c1 = a1 * x + b1 * y
-    a2 = random.randint(10, 40); b2 = -b1; c2 = a2 * x + b2 * y
-    target = random.randint(1, 3)*x + random.randint(1, 3)*y
-    q_str = f"若聯立方程 $\\begin{{cases}} {a1}x + {b1}y = {c1} \\\\ {a2}x {b2}y = {c2} \\end{{cases}}$ 解為 $x=a, y=b$，求特定代數式值。" # 簡化顯示
-    ans_str = f"{target} (範例)"
-    return {"topic": "🔥 歷屆-聯立方程式", "question": q_str, "answer": ans_str, "detail": f"x={x}, y={y}"}
-
-# ==========================================
-# Part 4: 題型策略地圖
-# ==========================================
+    return {"topic": "🎨 素養-圖形計算", "question": q_str, "answer": ans_str, "detail": detail, "image_data": buf}
 
 TOPIC_MAPPING = {
-    # 繪圖題 (New!)
-    "🎨 素養 - 停車位問題 (動態繪圖)": generate_visual_parking,
-    # 資料解讀
-    "📊 素養 - 民調調整倍率 (表格)": generate_table_poll_adjustment,
-    "🚲 素養 - 腳踏車齒輪比 (表格)": generate_table_bicycle_gear,
-    # 基礎與歷屆
     "基礎 - 數與量": generate_number_basic,
     "基礎 - 代數": generate_linear_algebra_basic,
     "基礎 - 幾何": generate_geometry_basic,
-    "🔥 歷屆 - 指數律": generate_real_exam_exponents,
-    "🔥 歷屆 - 多項式": generate_real_exam_polynomial,
-    "🔥 歷屆 - 聯立方程式": generate_real_exam_system_val,
+    "🎨 素養 - 停車位問題": generate_visual_parking,
 }
 
 def generate_exam_data(selected_topics, num_questions):
@@ -288,8 +186,8 @@ def generate_exam_data(selected_topics, num_questions):
     exam_list = []
     for i in range(num_questions):
         topic_name = selected_topics[i % len(selected_topics)]
-        generator_func = TOPIC_MAPPING[topic_name]
-        exam_list.append(generator_func())
+        if topic_name in TOPIC_MAPPING:
+            exam_list.append(TOPIC_MAPPING[topic_name]())
     random.shuffle(exam_list)
     return exam_list
 
@@ -300,10 +198,8 @@ def generate_exam_data(selected_topics, num_questions):
 class PDFExport(FPDF):
     def footer(self):
         self.set_y(-15)
-        try:
-            self.set_font("TaipeiSans", '', 10)
-        except:
-            self.set_font("Arial", 'I', 8)
+        try: self.set_font("TaipeiSans", '', 10)
+        except: self.set_font("Arial", 'I', 8)
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
 def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
@@ -323,47 +219,40 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
     pdf.cell(0, 10, full_title, ln=True, align='C')
     pdf.ln(10)
     
-    # 1. 隨機題目
-    if exam_data:
-        for idx, item in enumerate(exam_data):
-            # 題目文字
-            clean_q = item['question'].replace('$', '').replace('\\times', 'x').replace('\\div', '/')
-            if "|" in clean_q: clean_q = clean_q.split("|")[0] + "\n[表格請見線上版]"
-            
-            topic_show = item['topic'].split('-')[-1] if '-' in item['topic'] else item['topic']
-            pdf.multi_cell(0, 10, f"Q{idx+1}. [{topic_show}] {clean_q}")
-            
-            # [New] 插入動態生成的圖片 (如果有)
-            if 'image_data' in item:
-                try:
-                    # 將 BytesIO 存為暫存檔供 fpdf 使用
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
-                        tmp_img.write(item['image_data'].getvalue())
-                        tmp_img_path = tmp_img.name
-                    
-                    pdf.image(tmp_img_path, w=150) # 插入圖片
-                    os.remove(tmp_img_path) # 清理
-                except Exception as e:
-                    pdf.cell(0, 10, f"[Image Error: {e}]", ln=True)
+    # 1. 題目區
+    for idx, item in enumerate(exam_data):
+        q_text = item['question'].replace('$', '').replace('\\times', 'x').replace('\\div', '/')
+        t_name = item['topic'].split('-')[-1] if '-' in item['topic'] else item['topic']
+        pdf.multi_cell(0, 10, f"Q{idx+1}. [{t_name}] {q_text}")
+        
+        if 'image_data' in item:
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                    tmp.write(item['image_data'].getvalue())
+                    tmp_path = tmp.name
+                pdf.image(tmp_path, w=150)
+                os.remove(tmp_path)
+            except: pass
 
-            if mode == "student":
-                pdf.ln(20)
-            else:
-                pdf.set_text_color(255, 0, 0)
-                pdf.multi_cell(0, 8, f"Ans: {item['answer']}")
-                pdf.set_font_size(10)
-                pdf.set_text_color(100, 100, 100)
-                pdf.multi_cell(0, 8, f"解析: {item['detail']}")
-                pdf.set_text_color(0, 0, 0)
-                if font_ready: pdf.set_font("TaipeiSans", '', 14)
-                else: pdf.set_font("Arial", '', 14)
-                pdf.ln(5)
+        if mode == "student":
+            pdf.ln(20)
+        else:
+            pdf.set_text_color(255, 0, 0)
+            pdf.multi_cell(0, 8, f"Ans: {item['answer']}")
+            pdf.set_font_size(10)
+            pdf.set_text_color(100, 100, 100)
+            pdf.multi_cell(0, 8, f"解析: {item['detail']}")
+            pdf.set_text_color(0, 0, 0)
+            if font_ready: pdf.set_font("TaipeiSans", '', 14)
+            else: pdf.set_font("Arial", '', 14)
+            pdf.ln(5)
 
-    # 2. 上傳圖片
+    # 2. 圖片試題區 (原始上傳圖)
     if uploaded_images:
         pdf.add_page()
         if font_ready: pdf.set_font("TaipeiSans", '', 16)
-        pdf.cell(0, 10, "--- 圖片試題區 ---", ln=True, align='C')
+        pdf.cell(0, 10, "--- 附錄：原始圖片試題 ---", ln=True, align='C')
+        
         for img_file in uploaded_images:
             try:
                 img_file.seek(0)
@@ -371,85 +260,161 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
                 if file_ext not in ['jpg', 'jpeg', 'png']: file_ext = 'png'
                 unique_name = f"{uuid.uuid4()}.{file_ext}"
                 tmp_path = os.path.join(tempfile.gettempdir(), unique_name)
-                with open(tmp_path, "wb") as tmp: tmp.write(img_file.read())
+                
+                with open(tmp_path, "wb") as tmp:
+                    tmp.write(img_file.read())
+                
                 pdf.add_page()
                 pdf.image(tmp_path, x=10, y=10, w=190)
             except: pass
-            finally: 
-                if 'tmp_path' in locals() and os.path.exists(tmp_path): 
+            finally:
+                if 'tmp_path' in locals() and os.path.exists(tmp_path):
                     try: os.remove(tmp_path)
                     except: pass
 
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# Part 6: Streamlit UI
+# Part 6: Streamlit UI (AI 自動化版)
 # ==========================================
 
 def main():
-    st.title("📝 全方位國中數學出題系統 (Ultimate)")
-    st.markdown("### 支援：基礎、歷屆、**📊 表格題** 與 **🎨 動態繪圖題**")
+    st.title("🤖 全方位國中數學出題系統 (AI 自動版)")
+    st.markdown("### 按下生成，AI 將自動為您上傳的考題進行「變題」！")
     
-    # 字型檢查提示
-    if not os.path.exists(font_path):
-        st.warning("⚠️ 未偵測到 'TaipeiSansTCBeta-Regular.ttf'，繪圖題中的中文可能無法顯示。")
-
-    all_topics = list(TOPIC_MAPPING.keys())
-    if "selected_topics" not in st.session_state:
-        st.session_state.selected_topics = [t for t in all_topics if "素養" in t]
-
-    with st.sidebar:
-        st.header("⚙️ 試卷設定")
-        custom_title = st.text_input("試卷標題", value="會考衝刺練習")
-        uploaded_files = st.file_uploader("上傳圖片考題", type=['png', 'jpg'], accept_multiple_files=True)
-        selected_topics = st.multiselect("選擇單元", options=all_topics, key="selected_topics")
-        num_questions = st.slider("題目數量", 5, 50, 10)
-        generate_btn = st.button("🚀 建立新考卷", type="primary")
-
     if "exam_data" not in st.session_state:
         st.session_state["exam_data"] = []
-    
-    if generate_btn:
-        if not selected_topics and not uploaded_files:
-            st.error("請至少選擇一個單元或上傳圖片！")
-        else:
-            with st.spinner("正在繪製圖形與生成題目..."):
-                if selected_topics:
-                    st.session_state["exam_data"] = generate_exam_data(selected_topics, num_questions)
-                else:
-                    st.session_state["exam_data"] = []
-            st.success("生成完畢！")
+    if "ai_generated_questions" not in st.session_state:
+        st.session_state["ai_generated_questions"] = []
 
-    if st.session_state["exam_data"] or uploaded_files:
+    with st.sidebar:
+        st.header("⚙️ 設定")
+        
+        # API Key 讀取
+        if "GEMINI_API_KEY" in st.secrets:
+            api_key = st.secrets["GEMINI_API_KEY"]
+            st.success("✅ 已載入系統 API Key")
+        else:
+            api_key = st.text_input("Google API Key", type="password")
+        
+        custom_title = st.text_input("試卷標題", value="會考衝刺練習")
+        
+        st.subheader("1. 上傳考題圖片")
+        uploaded_files = st.file_uploader("支援 JPG/PNG (AI 將自動分析)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
+        
+        st.divider()
+        
+        st.subheader("2. 補充隨機題 (選填)")
+        all_topics = list(TOPIC_MAPPING.keys())
+        selected_topics = st.multiselect("選擇單元", options=all_topics)
+        num_questions = st.slider("補充題數", 0, 20, 5)
+        
+        generate_btn = st.button("🚀 建立新考卷 (含 AI 變題)", type="primary")
+
+    # ==========================================
+    # 核心邏輯：單一按鈕觸發所有流程
+    # ==========================================
+    if generate_btn:
+        # 1. 清空舊資料
+        st.session_state["exam_data"] = []
+        st.session_state["ai_generated_questions"] = []
+        
+        # 2. 生成基礎隨機題 (如果有的話)
+        if selected_topics:
+            with st.spinner("正在生成基礎隨機題..."):
+                st.session_state["exam_data"] = generate_exam_data(selected_topics, num_questions)
+        
+        # 3. [關鍵修正] 自動處理所有上傳圖片
+        if uploaded_files:
+            if not api_key:
+                st.warning("⚠️ 發現上傳圖片，但未輸入 API Key，無法進行 AI 變題。僅會顯示原始圖片。")
+            else:
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                for idx, img_file in enumerate(uploaded_files):
+                    status_text.text(f"🤖 AI 正在分析第 {idx+1}/{len(uploaded_files)} 張圖片...")
+                    
+                    # 呼叫 Gemini
+                    ai_text, error = get_ai_variation(img_file, api_key)
+                    
+                    if error:
+                        st.error(f"第 {idx+1} 張圖片分析失敗: {error}")
+                    else:
+                        new_q = parse_ai_response(ai_text)
+                        # 標記來源圖片是哪一張
+                        new_q["source_img_idx"] = idx 
+                        st.session_state["ai_generated_questions"].append(new_q)
+                    
+                    # 更新進度條
+                    progress_bar.progress((idx + 1) / len(uploaded_files))
+                
+                status_text.text("✅ AI 變題完成！")
+                progress_bar.empty()
+        
+        st.success("考卷生成完畢！")
+
+    # ==========================================
+    # 顯示結果
+    # ==========================================
+    
+    # 合併顯示內容 (基礎題 + AI題 + 原始圖)
+    has_content = st.session_state["exam_data"] or st.session_state["ai_generated_questions"] or uploaded_files
+    
+    if has_content:
         st.markdown(f"## 🏫 {custom_title}")
+        
         col1, col2 = st.columns([2, 1])
         with col1: show_answers = st.checkbox("🔍 顯示解答 (教師模式)", value=False)
         with col2:
-            if st.button("📥 下載 PDF"):
-                pdf_bytes = create_pdf(st.session_state["exam_data"], custom_title, mode="parent", uploaded_images=uploaded_files)
+            # 準備 PDF 資料：基礎題 + AI題
+            final_exam_data = st.session_state["exam_data"] + st.session_state["ai_generated_questions"]
+            if st.button("📥 下載完整 PDF"):
+                pdf_bytes = create_pdf(final_exam_data, custom_title, mode="parent", uploaded_images=uploaded_files)
                 st.download_button("點此下載", pdf_bytes, f"{custom_title}.pdf", "application/pdf")
 
         st.divider()
 
+        # 區塊一：基礎隨機題
         if st.session_state["exam_data"]:
-            st.subheader("一、隨機生成試題")
+            st.subheader("📌 第一部分：基礎練習")
             for i, q in enumerate(st.session_state["exam_data"]):
                 t_name = q['topic'].split('-')[-1] if '-' in q['topic'] else q['topic']
                 st.markdown(f"**Q{i+1}. [{t_name}]**")
                 st.markdown(q['question'])
-                
-                # [New] 顯示動態生成的圖片
                 if 'image_data' in q:
-                    st.image(q['image_data'], caption="示意圖 (由程式動態繪製)", use_container_width=False, width=600)
+                    st.image(q['image_data'], caption="示意圖", width=400)
                 
                 if show_answers:
-                    with st.expander("解答", expanded=True):
-                        st.success(q['answer'])
-                        st.caption(q['detail'])
+                    st.success(f"Ans: {q['answer']}")
+                    st.caption(q['detail'])
                 st.write("---")
 
-        if uploaded_files:
-            st.subheader("二、上傳圖片試題")
+        # 區塊二：AI 變題 (顯示在原始圖片旁邊或下方)
+        if st.session_state["ai_generated_questions"]:
+            st.subheader("🤖 第二部分：AI 仿題練習")
+            
+            for i, q in enumerate(st.session_state["ai_generated_questions"]):
+                st.markdown(f"**AI-Q{i+1}. (改編自上傳考題)**")
+                
+                col_q, col_origin = st.columns([2, 1])
+                
+                with col_q:
+                    st.info(q['question'])
+                    if show_answers:
+                        st.success(f"Ans: {q['answer']}")
+                        st.markdown(f"**解析：**\n{q['detail']}")
+                
+                with col_origin:
+                    # 嘗試顯示對應的原始圖片 (如果索引正確)
+                    if "source_img_idx" in q and uploaded_files and q["source_img_idx"] < len(uploaded_files):
+                        st.image(uploaded_files[q["source_img_idx"]], caption="原始題目", use_container_width=True)
+                
+                st.write("---")
+        
+        # 區塊三：如果只有上傳圖片但沒 API key，顯示圖片
+        elif uploaded_files and not st.session_state["ai_generated_questions"]:
+            st.subheader("📷 原始考題圖片")
             for img in uploaded_files:
                 st.image(img, use_container_width=True)
                 st.write("---")
