@@ -201,7 +201,8 @@ def create_pdf(exam_data, custom_title, mode="student"):
             pdf.set_text_color(255, 0, 0) # 紅色
             pdf.multi_cell(0, 8, f"Ans: {clean_a}")
             
-            pdf.set_font(size=10)
+            # [修正處] 改用 set_font_size 避免 TypeError
+            pdf.set_font_size(10)
             pdf.set_text_color(100, 100, 100) # 灰色
             pdf.multi_cell(0, 8, f"解析: {item['detail']}")
             
