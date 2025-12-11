@@ -4,7 +4,7 @@ import math
 from fpdf import FPDF
 import os
 import tempfile
-import uuid  # 新增：用於產生唯一檔名，解決圖片重複問題
+import uuid
 
 # 1. 設定頁面配置
 st.set_page_config(page_title="全方位數學自動出題系統", layout="wide", page_icon="📝")
@@ -267,7 +267,7 @@ def generate_exam_data(selected_topics, num_questions):
     return exam_list
 
 # ==========================================
-# Part 5: PDF 匯出功能
+# Part 5: PDF 匯出功能 (保留備用)
 # ==========================================
 
 class PDFExport(FPDF):
@@ -342,22 +342,15 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
         for img_file in uploaded_images:
             tmp_path = None
             try:
-                # 重置指標，確保讀取完整
                 img_file.seek(0)
-                
-                # 取得副檔名
                 file_ext = img_file.name.split('.')[-1].lower()
                 if file_ext not in ['jpg', 'jpeg', 'png']: file_ext = 'png'
-                
-                # [關鍵修正] 使用 uuid 產生絕對唯一的亂數檔名，防止 PDF 快取舊圖
                 unique_name = f"{uuid.uuid4()}.{file_ext}"
                 tmp_path = os.path.join(tempfile.gettempdir(), unique_name)
                 
-                # 使用標準寫入，確保資料完整落地
                 with open(tmp_path, "wb") as tmp:
                     tmp.write(img_file.read())
                 
-                # 新增頁面並插入圖片 (滿版)
                 pdf.add_page()
                 pdf.image(tmp_path, x=10, y=10, w=190)
                 
@@ -365,7 +358,6 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
                 pdf.set_font("Arial", '', 10)
                 pdf.cell(0, 10, f"Image Error: {e}", ln=True)
             finally:
-                # 清理暫存檔
                 if tmp_path and os.path.exists(tmp_path):
                     try:
                         os.remove(tmp_path)
@@ -385,6 +377,7 @@ def main():
 
     all_topics = list(TOPIC_MAPPING.keys())
     if "selected_topics" not in st.session_state:
+        # 預設選一些基礎跟歷屆改編
         st.session_state.selected_topics = [t for t in all_topics if "歷屆" in t][:3]
 
     def toggle_all():
@@ -430,24 +423,51 @@ def main():
             
             st.success("成功生成！")
 
+    # ==========================================
+    # 全新設計：線上考卷模式 (Web View)
+    # ==========================================
     if st.session_state["exam_data"] or uploaded_files:
-        st.subheader(f"👀 {custom_title} - 試題預覽")
-        if st.session_state["exam_data"]:
-            for i, q in enumerate(st.session_state["exam_data"][:3]):
-                with st.expander(f"Q{i+1} [{q['topic']}]"):
-                    st.write(f"**題目**： {q['question']}")
-                    st.write(f"**答案**： {q['answer']}")
-                    st.caption(f"解析： {q['detail']}")
+        st.markdown(f"## 🏫 {custom_title}")
         
+        # 1. 控制列：顯示解答開關 + PDF 下載
+        col_ctrl1, col_ctrl2 = st.columns([2, 1])
+        
+        with col_ctrl1:
+            show_answers = st.checkbox("🔍 顯示解答與解析 (教師模式)", value=False)
+        
+        with col_ctrl2:
+            # 仍然保留 PDF 下載功能，以防萬一
+            if st.button("📥 產生 PDF (備用)"):
+                safe_title = custom_title.replace(" ", "_")
+                pdf_bytes = create_pdf(st.session_state["exam_data"], custom_title, mode="parent", uploaded_images=uploaded_files)
+                st.download_button("點此下載 PDF", pdf_bytes, f"{safe_title}.pdf", "application/pdf")
+
         st.divider()
-        safe_title = custom_title.replace(" ", "_")
-        col1, col2 = st.columns(2)
-        with col1:
-            pdf_student = create_pdf(st.session_state["exam_data"], custom_title, mode="student", uploaded_images=uploaded_files)
-            st.download_button("📄 下載學生版", pdf_student, f"{safe_title}_學生版.pdf", "application/pdf")
-        with col2:
-            pdf_parent = create_pdf(st.session_state["exam_data"], custom_title, mode="parent", uploaded_images=uploaded_files)
-            st.download_button("👨‍🏫 下載家長版", pdf_parent, f"{safe_title}_解答版.pdf", "application/pdf")
+
+        # 2. 顯示隨機生成題目
+        if st.session_state["exam_data"]:
+            st.subheader("第一部分：隨機試題")
+            for i, q in enumerate(st.session_state["exam_data"]):
+                # 題目區
+                topic_display = q['topic'].split('-')[-1] if '-' in q['topic'] else q['topic']
+                st.markdown(f"#### Q{i+1}. [{topic_display}]")
+                st.info(q['question'])
+                
+                # 答案區 (根據開關顯示)
+                if show_answers:
+                    with st.expander("查看解答", expanded=True):
+                        st.success(f"**答案：** {q['answer']}")
+                        st.caption(f"**解析：** {q['detail']}")
+                else:
+                    st.write("(請在此計算作答...)")
+                    st.write("---") # 分隔線
+
+        # 3. 顯示上傳圖片
+        if uploaded_files:
+            st.subheader("第二部分：圖片試題")
+            for img_file in uploaded_files:
+                st.image(img_file, caption=img_file.name, use_container_width=True)
+                st.write("---")
 
 if __name__ == "__main__":
     main()
