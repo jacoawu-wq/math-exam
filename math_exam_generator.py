@@ -3,6 +3,7 @@ import random
 import math
 from fpdf import FPDF
 import os
+import tempfile  # 新增：用於處理圖片暫存
 
 # 1. 設定頁面配置
 st.set_page_config(page_title="全方位數學自動出題系統", layout="wide", page_icon="📝")
@@ -370,7 +371,7 @@ class PDFExport(FPDF):
             self.set_font("Arial", 'I', 8)
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
-def create_pdf(exam_data, custom_title, mode="student"):
+def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
     pdf = PDFExport()
     pdf.add_page()
     
@@ -394,6 +395,7 @@ def create_pdf(exam_data, custom_title, mode="student"):
     pdf.cell(0, 10, full_title, ln=True, align='C')
     pdf.ln(10)
     
+    # 1. 自動生成試題區
     for idx, item in enumerate(exam_data):
         clean_q = item['question'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\times', 'x').replace('\\div', '÷').replace('\\le', '<=').replace('\\ge', '>=')
         clean_a = item['answer'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\pi', 'π').replace('\\times', 'x')
@@ -421,6 +423,39 @@ def create_pdf(exam_data, custom_title, mode="student"):
             else: pdf.set_font("Arial", '', 14)
             pdf.ln(5)
 
+    # 2. 圖片試題區 (新增功能)
+    if uploaded_images:
+        pdf.add_page() # 新起一頁
+        # 使用粗體或大標題
+        if font_ready: pdf.set_font("TaipeiSans", '', 16)
+        pdf.cell(0, 10, "--- 圖片試題區 ---", ln=True, align='C')
+        pdf.ln(5)
+        
+        for img_file in uploaded_images:
+            try:
+                # 在雲端環境中，fpdf 需要實體檔案路徑，因此使用 tempfile
+                img_file.seek(0) # 確保從頭讀取
+                
+                # 判斷副檔名
+                file_ext = img_file.name.split('.')[-1].lower()
+                if file_ext not in ['jpg', 'jpeg', 'png']:
+                    file_ext = 'png' # 預設
+
+                with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
+                    tmp.write(img_file.read())
+                    tmp_path = tmp.name
+                
+                # 計算適合的寬度，A4 寬度約 210mm，左右留邊
+                # 這裡設定最大寬度 170mm，高度自動保持比例
+                pdf.image(tmp_path, w=170)
+                pdf.ln(10) # 圖片間的間隔
+                
+                # 刪除暫存檔
+                os.remove(tmp_path)
+            except Exception as e:
+                pdf.set_font("Arial", '', 10)
+                pdf.cell(0, 10, f"Error displaying image: {e}", ln=True)
+
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
@@ -446,6 +481,18 @@ def main():
         st.header("⚙️ 試卷設定")
         custom_title = st.text_input("試卷標題", value="會考衝刺練習")
         
+        # 圖片上傳區 (新增)
+        st.subheader("📸 上傳考題圖片")
+        uploaded_files = st.file_uploader(
+            "上傳圖片 (支援 JPG/PNG，可多張)", 
+            type=['png', 'jpg', 'jpeg'], 
+            accept_multiple_files=True
+        )
+        if uploaded_files:
+            st.caption(f"已上傳 {len(uploaded_files)} 張圖片")
+
+        st.divider()
+
         st.checkbox("全選所有單元", key="use_all_topics", on_change=toggle_all)
         
         selected_topics = st.multiselect(
@@ -457,7 +504,7 @@ def main():
         num_questions = st.slider("題目數量", 5, 50, 10)
         generate_btn = st.button("🚀 建立新考卷", type="primary")
         
-        st.info("🔥 PRO版特色：\n進階題型內建多種情境（如手機資費、存錢計畫、圍籬笆面積等），隨機切換，拒絕死背！")
+        st.info("🔥 PRO版特色：\n進階題型內建多種情境，並支援**圖片考題上傳**，直接整合進 PDF 考卷！")
 
     if "exam_data" not in st.session_state:
         st.session_state["exam_data"] = []
@@ -481,15 +528,20 @@ def main():
         
         if len(st.session_state["exam_data"]) > 3:
             st.info(f"... 還有 {len(st.session_state['exam_data'])-3} 題，請下載 PDF 查看完整版。")
+            
+        if uploaded_files:
+            st.success(f"另有 {len(uploaded_files)} 張圖片考題將合併於 PDF 後方。")
 
         st.divider()
         safe_title = custom_title.replace(" ", "_")
         col1, col2 = st.columns(2)
         with col1:
-            pdf_student = create_pdf(st.session_state["exam_data"], custom_title, mode="student")
+            # 傳遞 uploaded_files 給 create_pdf
+            pdf_student = create_pdf(st.session_state["exam_data"], custom_title, mode="student", uploaded_images=uploaded_files)
             st.download_button("📄 下載學生版", pdf_student, f"{safe_title}_學生版.pdf", "application/pdf")
         with col2:
-            pdf_parent = create_pdf(st.session_state["exam_data"], custom_title, mode="parent")
+            # 傳遞 uploaded_files 給 create_pdf (家長版也附上題目圖，方便對照)
+            pdf_parent = create_pdf(st.session_state["exam_data"], custom_title, mode="parent", uploaded_images=uploaded_files)
             st.download_button("👨‍🏫 下載家長版", pdf_parent, f"{safe_title}_解答版.pdf", "application/pdf")
 
 if __name__ == "__main__":
