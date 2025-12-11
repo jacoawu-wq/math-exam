@@ -7,6 +7,7 @@ import tempfile
 import uuid
 import io
 import time
+import glob 
 from PIL import Image
 
 # 嘗試匯入 matplotlib
@@ -17,7 +18,7 @@ try:
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
-    st.error("⚠️ 系統缺少 matplotlib。請檢查 requirements.txt 是否包含 'matplotlib'，並請嘗試 Reboot App。")
+    st.error("⚠️ 系統缺少 matplotlib。請檢查 requirements.txt。")
 
 # 匯入 Google Generative AI
 try:
@@ -26,7 +27,7 @@ try:
     HAS_GENAI = True
 except ImportError:
     HAS_GENAI = False
-    st.error("⚠️ 系統缺少 google-generativeai。請檢查 requirements.txt，並請嘗試 Reboot App。")
+    st.error("⚠️ 系統缺少 google-generativeai。請檢查 requirements.txt。")
 
 # 1. 設定頁面配置
 st.set_page_config(page_title="全方位數學自動出題系統 (AI 旗艦版)", layout="wide", page_icon="🛡️")
@@ -39,12 +40,13 @@ if HAS_MATPLOTLIB and os.path.exists(font_path):
     plt.rcParams['axes.unicode_minus'] = False 
 
 # ==========================================
-# Part 0: AI 核心邏輯 (Gemini Integration)
+# Part 0: AI 核心邏輯
 # ==========================================
 
-def get_ai_variation(image_file, api_key, model_name, num_variations=1):
+def get_ai_variation(image_input, api_key, model_name):
     """
-    使用 Google Gemini Vision 模型分析圖片 (批次生成多題以節省額度)
+    使用 Google Gemini Vision 模型分析圖片
+    預設模式：自動拆解圖片中的多道題目 (Multi-Question Mode)
     """
     if not HAS_GENAI: return None, "缺少 AI 套件"
     if not api_key: return None, "未輸入 API Key"
@@ -53,35 +55,30 @@ def get_ai_variation(image_file, api_key, model_name, num_variations=1):
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name)
         
-        image_file.seek(0)
-        img = Image.open(image_file)
+        # 處理圖片來源
+        if isinstance(image_input, str): 
+            img = Image.open(image_input)
+        else: 
+            image_input.seek(0)
+            img = Image.open(image_input)
         
-        # Prompt 支援一次生成多題
-        prompt = f"""
-        你是一位專業的國中數學老師。請分析這張圖片中的數學題目：
-        1. 找出核心觀念。
-        2. 請根據這個觀念，連續設計【{num_variations} 道】不同的新題目。
-           - 每一題的數字與情境都要不同。
+        # [關鍵更新] 固定使用「多題拆解」Prompt
+        prompt = """
+        你是一位專業的國中數學老師。這張圖片中包含「多道」不同的數學題目（可能有編號如 1, 2, 3...）。
+        請執行以下任務：
+        1. 辨識出圖中所有的題目。
+        2. **針對每一道識別出的題目**，各設計 1 道「邏輯相同、但數字改變」的新題目。
+           - 例如圖中有 5 題，你就產生 5 題對應的新題目。
            - 題目敘述要通順繁體中文。
-        3. 【重要】如果題目涉及幾何圖形，請為每一題撰寫一段 Python matplotlib 程式碼。
-           - 必須將圖表物件存入變數 `fig`。
-           - 若有文字標註，請直接使用中文。
+        3. 【重要】如果某題涉及幾何圖形，請為該題撰寫 Python matplotlib 程式碼 (fig)。
         
         請嚴格依照以下格式輸出（每一題之間用 "===題組分隔線===" 分隔）：
-        
-        [題目]
-        (第1題內容)
+        [題目] (第1題變體)
         [答案]
-        (第1題答案)
         [解析]
-        (第1題過程)
         [繪圖程式碼]
-        (第1題代碼，若無則留空)
-        
         ===題組分隔線===
-        
-        [題目]
-        (第2題內容...)
+        [題目] (第2題變體)
         ...
         """
         
@@ -92,7 +89,6 @@ def get_ai_variation(image_file, api_key, model_name, num_variations=1):
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
         
-        # 重試機制 (針對 429 錯誤)
         max_retries = 3
         for attempt in range(max_retries + 1):
             try:
@@ -101,7 +97,6 @@ def get_ai_variation(image_file, api_key, model_name, num_variations=1):
             except Exception as e:
                 if "429" in str(e):
                     if attempt < max_retries:
-                        # 遞增等待時間: 10s, 20s, 30s
                         wait_time = (attempt + 1) * 10
                         time.sleep(wait_time) 
                         continue
@@ -110,15 +105,8 @@ def get_ai_variation(image_file, api_key, model_name, num_variations=1):
                 else:
                     raise e
 
-        if not response.candidates:
-            return None, "AI 拒絕回答 (可能觸發安全機制)。"
-            
-        candidate = response.candidates[0]
-        if candidate.finish_reason.name != "STOP":
-             return None, f"生成被中斷 ({candidate.finish_reason.name})。"
-
-        if not candidate.content or not candidate.content.parts:
-             return None, "AI 回傳了空白內容。"
+        if not response.candidates: return None, "AI 拒絕回答。"
+        if not response.parts: return None, "AI 回傳空白。"
 
         return response.text, None
             
@@ -128,13 +116,10 @@ def get_ai_variation(image_file, api_key, model_name, num_variations=1):
 def parse_ai_response(text):
     """解析 AI 回傳格式 (支援多題解析)"""
     questions = []
-    
-    # 先用分隔線切開每一題
     raw_blocks = text.split("===題組分隔線===")
     
     for block in raw_blocks:
         if not block.strip(): continue
-        
         result = {"topic": "🤖 AI-仿題生成", "question": "", "answer": "", "detail": "", "code": None}
         try:
             if '[題目]' in block:
@@ -153,16 +138,13 @@ def parse_ai_response(text):
                     else:
                         result["detail"] = remain2.strip()
                 questions.append(result)
-        except:
-            continue
+        except: continue
             
     if not questions and text:
         return [{"topic": "🤖 AI-仿題生成", "question": text, "answer": "解析失敗", "detail": "格式不符"}]
-        
     return questions
 
 def execute_drawing_code(code_str):
-    """執行繪圖代碼"""
     if not code_str or not HAS_MATPLOTLIB: return None
     try:
         local_scope = {}
@@ -181,38 +163,20 @@ def execute_drawing_code(code_str):
 # Part 1: 基礎題目生成
 # ==========================================
 def generate_number_basic():
-    sub_type = random.choice(['calc', 'sci', 'index'])
-    if sub_type == 'calc':
-        a, b, c = random.randint(-20, 20), random.randint(-20, 20), random.randint(-10, 10)
-        if c == 0: c = 1
-        op1, op2 = random.choice(['+', '-']), random.choice(['*', '-'])
-        q_str = f"計算： ${a} {op1} ({b}) {op2} ({c})$"
-        ans_str = str(a + (b * c if op2 == '*' else b - c) if op1 == '+' else a - (b * c if op2 == '*' else b - c))
-        detail = "先乘除後加減。"
-    elif sub_type == 'sci':
-        base = random.randint(1, 9); power = random.randint(-8, 8); num = base * (10**power)
-        q_str = f"將 {num} 轉為科學記號。"
-        ans_str = f"${base} \\times 10^{{{power}}}$"
-        detail = "科學記號形式。"
-    else:
-        base = random.randint(2, 5); p1, p2 = random.randint(2, 5), random.randint(2, 5)
-        q_str = f"化簡 $({base}^{{{p1}}})^{{{p2}}} \\div {base}^{{{p2}}}$"
-        ans_str = f"${base}^{{{p1 * p2 - p2}}}$"
-        detail = "指數律。"
-    return {"topic": "基礎-數與量", "question": q_str, "answer": ans_str, "detail": detail}
+    a, b, c = random.randint(-20, 20), random.randint(-20, 20), random.randint(-10, 10)
+    if c==0: c=1
+    q_str = f"計算： ${a} + ({b}) \\times ({c})$"
+    ans_str = str(a + b * c)
+    return {"topic": "基礎-數與量", "question": q_str, "answer": ans_str, "detail": "四則運算"}
 
 def generate_linear_algebra_basic():
-    x = random.randint(-10, 10); a = random.choice([-3, -2, 2, 3]); b = random.randint(-10, 10)
+    x = random.randint(-10, 10); a = random.choice([-3, 2, 3]); b = random.randint(-10, 10)
     c = a * x + b
-    q_str = f"解 ${a}x + ({b}) = {c}$"
-    ans_str = f"$x = {x}$"
-    return {"topic": "基礎-代數", "question": q_str, "answer": ans_str, "detail": "移項求解。"}
+    return {"topic": "基礎-代數", "question": f"解 ${a}x + ({b}) = {c}$", "answer": f"$x={x}$", "detail": "移項"}
 
 def generate_geometry_basic():
     a1 = random.randrange(30, 80, 5); a2 = random.randrange(30, 80, 5)
-    q_str = f"三角形兩內角為 {a1}°, {a2}°，求第三角。"
-    ans_str = f"{180-a1-a2}°"
-    return {"topic": "基礎-幾何", "question": q_str, "answer": ans_str, "detail": "內角和180。"}
+    return {"topic": "基礎-幾何", "question": f"三角形兩內角為 {a1}°, {a2}°，求第三角。", "answer": f"{180-a1-a2}°", "detail": "內角和"}
 
 TOPIC_MAPPING = {
     "基礎 - 數與量": generate_number_basic,
@@ -240,7 +204,7 @@ class PDFExport(FPDF):
         except: self.set_font("Arial", 'I', 8)
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
-def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
+def create_pdf(exam_data, custom_title, mode="student", image_paths=None):
     pdf = PDFExport()
     pdf.add_page()
     
@@ -287,25 +251,23 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
             else: pdf.set_font("Arial", '', 14)
             pdf.ln(5)
 
-    if uploaded_images:
+    if image_paths:
         pdf.add_page()
         if font_ready: pdf.set_font("TaipeiSans", '', 16)
-        pdf.cell(0, 10, "--- 原始試題區 ---", ln=True, align='C')
-        for img_file in uploaded_images:
+        pdf.cell(0, 10, "--- 原始試題區 (Reference) ---", ln=True, align='C')
+        for img_source in image_paths:
             try:
-                img_file.seek(0)
-                file_ext = img_file.name.split('.')[-1].lower()
-                if file_ext not in ['jpg', 'jpeg', 'png']: file_ext = 'png'
-                unique_name = f"{uuid.uuid4()}.{file_ext}"
-                tmp_path = os.path.join(tempfile.gettempdir(), unique_name)
-                with open(tmp_path, "wb") as tmp: tmp.write(img_file.read())
-                pdf.add_page()
-                pdf.image(tmp_path, x=10, y=10, w=190)
+                if isinstance(img_source, str):
+                    pdf.image(img_source, x=10, w=190)
+                else:
+                    img_source.seek(0)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                        tmp.write(img_source.read())
+                        tmp_path = tmp.name
+                    pdf.image(tmp_path, x=10, w=190)
+                    os.remove(tmp_path)
+                pdf.ln(10)
             except: pass
-            finally:
-                if 'tmp_path' in locals() and os.path.exists(tmp_path):
-                    try: os.remove(tmp_path)
-                    except: pass
 
     return pdf.output(dest='S').encode('latin-1')
 
@@ -314,124 +276,125 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
 # ==========================================
 
 def main():
-    st.title("🤖 全方位國中數學出題系統 (AI 省流版)")
+    st.title("🗄️ 全方位數學出題系統 (題庫旗艦版)")
     
     if "exam_data" not in st.session_state: st.session_state["exam_data"] = []
     if "ai_generated_questions" not in st.session_state: st.session_state["ai_generated_questions"] = []
+    if "selected_bank_images" not in st.session_state: st.session_state["selected_bank_images"] = []
 
     with st.sidebar:
         st.header("⚙️ 設定")
         
         if "GEMINI_API_KEY" in st.secrets:
             api_key = st.secrets["GEMINI_API_KEY"]
-            st.success("✅ 已載入系統 API Key")
+            st.success("✅ 系統 API Key")
         else:
             api_key = st.text_input("Google API Key", type="password")
         
-        # 自動偵測模型
-        model_options = ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]
-        selected_model = model_options[0]
-        
-        if api_key and HAS_GENAI:
-            try:
-                genai.configure(api_key=api_key)
-                models = list(genai.list_models())
-                available = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
-                if available:
-                    default_idx = 0
-                    for i, m in enumerate(available):
-                        if "flash" in m: default_idx = i; break
-                    model_options = available
-                    selected_model = st.selectbox("AI 模型", model_options, index=default_idx)
-                else:
-                    selected_model = st.selectbox("AI 模型 (預設)", model_options)
-            except:
-                selected_model = st.selectbox("AI 模型 (離線)", model_options)
+        bank_folder = "question_bank"
+        bank_images = []
+        if os.path.exists(bank_folder):
+            for ext in ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.PNG']:
+                bank_images.extend(glob.glob(os.path.join(bank_folder, ext)))
         
         custom_title = st.text_input("試卷標題", value="會考衝刺練習")
         
-        st.subheader("1. 上傳考題圖片")
-        uploaded_files = st.file_uploader("上傳考題", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
+        st.divider()
+        st.subheader("1. 題目來源")
+        source_mode = st.radio("選擇模式", ["📸 上傳圖片 (單次)", "📂 題庫隨機抽取", "🎲 純演算法生成"])
         
-        st.subheader("2. 隨機題庫 (非AI)")
-        all_topics = list(TOPIC_MAPPING.keys())
-        selected_topics = st.multiselect("選擇單元", options=all_topics)
+        uploaded_files = []
+        bank_sample_count = 0
+        
+        if source_mode == "📸 上傳圖片 (單次)":
+            uploaded_files = st.file_uploader("上傳圖片", type=['png', 'jpg'], accept_multiple_files=True)
+            
+        elif source_mode == "📂 題庫隨機抽取":
+            if not bank_images:
+                st.error(f"❌ 找不到 'question_bank' 資料夾！")
+            else:
+                st.success(f"✅ 題庫中共有 {len(bank_images)} 張圖片")
+                bank_sample_count = st.slider("從題庫隨機抽出幾張圖?", 1, min(10, len(bank_images)), 3)
         
         st.divider()
-        st.subheader("🔢 總題數設定 (最下方)")
+        st.subheader("2. AI 設定")
         
-        # [修改處] 將題數設定統一移至最下方，且允許 AI 題目數設為 0~10
-        ai_variations = st.slider("👉 每張圖片生成幾題 AI 仿題?", 1, 10, 1, help="設為 1 代表每張圖產生 1 題類似題。建議設 2~3 以節省 API 請求次數。")
-        num_questions = st.slider("👉 隨機基礎題數", 0, 50, 5)
+        st.info("🧩 預設模式：自動拆解圖片中的多道題目 (針對圖中每一題各產生 1 個變體)")
         
+        model_options = ["models/gemini-1.5-flash", "models/gemini-1.5-pro"]
+        selected_model = st.selectbox("AI 模型", model_options)
+
         generate_btn = st.button("🚀 建立考卷", type="primary")
 
     if generate_btn:
         st.session_state["exam_data"] = []
         st.session_state["ai_generated_questions"] = []
+        st.session_state["selected_bank_images"] = [] 
         
-        if selected_topics:
-            with st.spinner("生成基礎題..."):
-                st.session_state["exam_data"] = generate_exam_data(selected_topics, num_questions)
+        target_images = []
         
-        if uploaded_files:
+        if source_mode == "📸 上傳圖片 (單次)" and uploaded_files:
+            target_images = uploaded_files 
+            st.session_state["selected_bank_images"] = uploaded_files
+            
+        elif source_mode == "📂 題庫隨機抽取" and bank_images:
+            target_images = random.sample(bank_images, bank_sample_count)
+            st.session_state["selected_bank_images"] = target_images
+            st.info(f"🎲 已從題庫抽出: {[os.path.basename(p) for p in target_images]}")
+
+        if target_images:
             if not api_key:
                 st.warning("⚠️ 未輸入 API Key，僅顯示原始圖片。")
-            elif not HAS_GENAI:
-                st.error("❌ 系統缺少 AI 套件。")
             else:
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
-                for idx, img_file in enumerate(uploaded_files):
-                    status_text.text(f"🤖 AI 分析第 {idx+1}/{len(uploaded_files)} 題 (生成 {ai_variations} 變題)...")
+                for idx, img_source in enumerate(target_images):
+                    status_text.text(f"🤖 AI 分析第 {idx+1}/{len(target_images)} 題...")
                     
                     if idx > 0:
-                        for s in range(15, 0, -1):
-                            status_text.text(f"⏳ 額度保護冷卻中... {s} 秒")
+                        for s in range(10, 0, -1):
+                            status_text.text(f"⏳ 冷卻中 (避免 429 錯誤)... {s} 秒")
                             time.sleep(1)
                     
-                    ai_text, error = get_ai_variation(img_file, api_key, selected_model, num_variations=ai_variations)
+                    # 預設多題拆解模式
+                    ai_text, error = get_ai_variation(img_source, api_key, selected_model)
                     
                     if error:
-                        st.warning(f"第 {idx+1} 張圖片分析略過: {error}")
+                        st.warning(f"圖片分析失敗: {error}")
                     else:
                         new_qs = parse_ai_response(ai_text)
                         for q in new_qs:
                             q["source_img_idx"] = idx 
                             st.session_state["ai_generated_questions"].append(q)
                     
-                    progress_bar.progress((idx + 1) / len(uploaded_files))
+                    progress_bar.progress((idx + 1) / len(target_images))
                 
                 status_text.text("✅ 完成！")
                 progress_bar.empty()
         
-        st.success("完成！")
+        st.success("考卷生成完畢！")
 
-    has_content = st.session_state["exam_data"] or st.session_state["ai_generated_questions"] or uploaded_files
+    has_content = st.session_state["ai_generated_questions"] or st.session_state["selected_bank_images"]
     
     if has_content:
         st.markdown(f"## 🏫 {custom_title}")
         col1, col2 = st.columns([2, 1])
         with col1: show_answers = st.checkbox("🔍 顯示解答", value=False)
         with col2:
-            final_data = st.session_state["exam_data"] + st.session_state["ai_generated_questions"]
+            final_data = st.session_state["ai_generated_questions"]
             if st.button("📥 下載 PDF"):
-                pdf_bytes = create_pdf(final_data, custom_title, mode="parent", uploaded_images=uploaded_files)
+                pdf_bytes = create_pdf(final_data, custom_title, mode="parent", image_paths=st.session_state["selected_bank_images"])
                 st.download_button("點此下載", pdf_bytes, f"{custom_title}.pdf", "application/pdf")
 
-        if st.session_state["exam_data"]:
-            st.subheader("一、基礎題")
-            for i, q in enumerate(st.session_state["exam_data"]):
-                st.markdown(f"**Q{i+1}. [{q['topic']}]**")
-                st.markdown(q['question'])
-                if show_answers: st.success(q['answer']); st.caption(q['detail'])
-                st.write("---")
+        st.divider()
 
         if st.session_state["ai_generated_questions"]:
-            st.subheader("二、AI 仿題")
+            st.subheader("📝 AI 變題區")
             for i, q in enumerate(st.session_state["ai_generated_questions"]):
-                st.markdown(f"**AI-Q{i+1}.**")
+                source_label = f" (源自圖 {q.get('source_img_idx', 0)+1})"
+                st.markdown(f"**Q{i+1}{source_label}.**")
+                
                 col_q, col_img = st.columns([2, 1])
                 with col_q:
                     st.info(q['question'])
@@ -439,14 +402,20 @@ def main():
                         img_buf = execute_drawing_code(q['code'])
                         if img_buf: st.image(img_buf, width=400)
                     if show_answers: st.success(q['answer']); st.markdown(q['detail'])
+                
                 with col_img:
-                    if "source_img_idx" in q and uploaded_files:
-                        st.image(uploaded_files[q["source_img_idx"]], caption="原題")
+                    idx = q.get("source_img_idx")
+                    images_list = st.session_state["selected_bank_images"]
+                    if idx is not None and idx < len(images_list):
+                        img_src = images_list[idx]
+                        if isinstance(img_src, str): st.image(img_src, caption="題庫原圖")
+                        else: st.image(img_src, caption="上傳原圖")
                 st.write("---")
         
-        elif uploaded_files and not st.session_state["ai_generated_questions"]:
-            st.subheader("三、原始圖")
-            for img in uploaded_files: st.image(img)
+        elif st.session_state["selected_bank_images"]:
+            st.subheader("📷 原始試題")
+            for img in st.session_state["selected_bank_images"]:
+                st.image(img, width=500)
 
 if __name__ == "__main__":
     main()
