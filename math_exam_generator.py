@@ -424,6 +424,7 @@ def create_pdf(exam_data, custom_title, mode="student"):
             pdf.set_text_color(255, 0, 0) # Red
             pdf.multi_cell(0, 8, f"Ans: {clean_a}")
             
+            # [修正處] 確保使用 set_font_size 以避免 TypeError
             pdf.set_font_size(10)
             pdf.set_text_color(100, 100, 100) # Gray
             pdf.multi_cell(0, 8, f"解析: {item['detail']}")
@@ -444,23 +445,32 @@ def main():
     st.markdown("### 108課綱對應版 - 支援數與量、代數、幾何、統計")
     st.markdown("---")
 
+    # 1. 初始化 Session State (確保選項不會消失的關鍵!)
+    all_topics = list(TOPIC_MAPPING.keys())
+    if "selected_topics" not in st.session_state:
+        # 預設選前兩個單元
+        st.session_state.selected_topics = all_topics[:2]
+
+    # 2. 定義全選的 Callback 函數
+    def toggle_all():
+        if st.session_state.use_all_topics:
+            st.session_state.selected_topics = all_topics
+        else:
+            # 取消全選時，恢復為預設前兩個 (或您想要清空也可以)
+            st.session_state.selected_topics = all_topics[:2]
+
     with st.sidebar:
         st.header("⚙️ 試卷設定")
         custom_title = st.text_input("試卷標題", value="數學單元評量")
         
-        # 全選功能
-        all_topics = list(TOPIC_MAPPING.keys())
-        container = st.container()
-        if st.checkbox("全選所有單元"):
-            default_choice = all_topics
-        else:
-            # 預設選前兩個
-            default_choice = all_topics[:2]
+        # 全選功能 (綁定 key 和 callback)
+        st.checkbox("全選所有單元", key="use_all_topics", on_change=toggle_all)
             
+        # 多選單 (綁定 key，讓 Session State 自動管理)
         selected_topics = st.multiselect(
             "選擇單元 (可複選)",
             options=all_topics,
-            default=default_choice
+            key="selected_topics" 
         )
         
         num_questions = st.slider("題目數量", 5, 50, 10)
