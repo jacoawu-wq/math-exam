@@ -289,8 +289,29 @@ def main():
             
             st.write(f"📂 掃描到 {len(bank_images)} 張原始考卷圖片")
             
-            # 模型選擇
-            model_name = "models/gemini-1.5-flash"
+            # [修正處] 模型自動偵測，取代寫死 "models/gemini-1.5-flash"
+            model_options = ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]
+            selected_model = model_options[0] # 預設值
+            
+            # 如果有 API Key，嘗試連線列出可用模型
+            if api_key and HAS_GENAI:
+                try:
+                    genai.configure(api_key=api_key)
+                    models = list(genai.list_models())
+                    available = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
+                    if available:
+                        default_idx = 0
+                        for i, m in enumerate(available):
+                            if "flash" in m: default_idx = i; break
+                        model_options = available
+                        selected_model = st.selectbox("選擇 AI 模型", model_options, index=default_idx)
+                    else:
+                        selected_model = st.selectbox("選擇 AI 模型 (預設)", model_options)
+                except Exception as e:
+                    # 避免在這裡報錯，改用下拉選單顯示狀態
+                    selected_model = st.selectbox(f"AI 模型 (連線異常: {str(e)[:20]}...)", model_options)
+            else:
+                selected_model = st.selectbox("AI 模型", model_options, disabled=True, help="請先輸入 API Key")
             
             process_btn = st.button("⚡ 開始批量轉化 (存入資料庫)")
             
@@ -334,7 +355,8 @@ def main():
                 if idx > 0:
                     time.sleep(20)
                 
-                ai_text, error = get_ai_variation(img_path, api_key, model_name)
+                # 使用選單選到的模型 (selected_model) 而非寫死的字串
+                ai_text, error = get_ai_variation(img_path, api_key, selected_model)
                 
                 if error:
                     st.warning(f"{file_name} 失敗: {error}")
