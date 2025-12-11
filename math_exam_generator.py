@@ -17,7 +17,7 @@ try:
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
-    st.error("⚠️ 系統缺少 matplotlib。請檢查 requirements.txt 是否包含 'matplotlib'。")
+    st.error("⚠️ 系統缺少 matplotlib。請檢查 requirements.txt 是否包含 'matplotlib'，並請嘗試 Reboot App。")
 
 # 匯入 Google Generative AI
 try:
@@ -26,7 +26,7 @@ try:
     HAS_GENAI = True
 except ImportError:
     HAS_GENAI = False
-    st.error("⚠️ 系統缺少 google-generativeai。請檢查 requirements.txt。")
+    st.error("⚠️ 系統缺少 google-generativeai。請檢查 requirements.txt，並請嘗試 Reboot App。")
 
 # 1. 設定頁面配置
 st.set_page_config(page_title="全方位數學自動出題系統 (AI 終極版)", layout="wide", page_icon="🛡️")
@@ -66,7 +66,7 @@ def get_ai_variation(image_file, api_key, model_name):
         [題目] ... [答案] ... [解析] ... [繪圖程式碼] ...
         """
         
-        # [關鍵修正 1] 設定安全過濾器為「不阻擋」，避免誤判導致錯誤
+        # 設定安全過濾器為「不阻擋」，避免誤判導致 Invalid Operation
         safety_settings = {
             HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -74,20 +74,22 @@ def get_ai_variation(image_file, api_key, model_name):
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
         
-        # [關鍵修正 2] 簡單的重試機制，處理 429 錯誤
-        max_retries = 2
+        # 簡單的重試機制，處理 429 錯誤
+        max_retries = 3
         for attempt in range(max_retries + 1):
             try:
                 response = model.generate_content([prompt, img], safety_settings=safety_settings)
                 break # 成功則跳出迴圈
             except Exception as e:
-                if "429" in str(e) and attempt < max_retries:
-                    time.sleep(3) # 等待 3 秒後重試
-                    continue
+                if "429" in str(e):
+                    if attempt < max_retries:
+                        time.sleep(5) # 遇到 429 錯誤，休息 5 秒後重試
+                        continue
+                    else:
+                        return None, "API 額度已滿 (429)，請稍後再試。"
                 else:
                     raise e # 其他錯誤直接拋出
 
-        # [關鍵修正 3] 嚴格檢查回傳內容，避免崩潰
         if not response.candidates:
             return None, "AI 拒絕回答 (可能觸發安全機制或無內容)。"
             
@@ -344,11 +346,10 @@ def main():
                 for idx, img_file in enumerate(uploaded_files):
                     status_text.text(f"🤖 AI 分析第 {idx+1}/{len(uploaded_files)} 題...")
                     
-                    time.sleep(1) # 基礎緩衝
+                    time.sleep(2) # 基礎緩衝
                     ai_text, error = get_ai_variation(img_file, api_key, selected_model)
                     
                     if error:
-                        # 錯誤不中斷，僅顯示警告
                         st.warning(f"第 {idx+1} 張圖片分析略過: {error}")
                     else:
                         new_q = parse_ai_response(ai_text)
