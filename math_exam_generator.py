@@ -3,13 +3,13 @@ import random
 import math
 from fpdf import FPDF
 import os
-import tempfile  # 新增：用於處理圖片暫存
+import tempfile
 
 # 1. 設定頁面配置
 st.set_page_config(page_title="全方位數學自動出題系統", layout="wide", page_icon="📝")
 
 # ==========================================
-# Part 1: 基礎題目生成邏輯 (Basic Generators)
+# Part 1: 基礎題目生成邏輯
 # ==========================================
 
 def generate_number_basic():
@@ -86,266 +86,224 @@ def generate_geometry_basic():
     return {"topic": "基礎-幾何圖形", "question": q_str, "answer": ans_str, "detail": detail}
 
 # ==========================================
-# Part 2: 進階歷屆試題改編 (Advanced Exam Styles - Multi-Scenario)
+# Part 2: 歷屆試題還原 (Real Exam Restored)
+# ==========================================
+
+def generate_real_exam_exponents():
+    """還原題型：指數律運算 (參考 Q1)"""
+    # 題目形式：7^10 * 7^2 / 7^4
+    base = random.choice([2, 3, 5, 7, 10])
+    n1 = random.randint(5, 15)
+    n2 = random.randint(2, 5)
+    n3 = random.randint(3, 8)
+    
+    q_str = f"算式 ${base}^{{{n1}}} \\times {base}^{{{n2}}} \\div {base}^{{{n3}}}$ 之值可用下列何者表示？"
+    ans_pow = n1 + n2 - n3
+    ans_str = f"${base}^{{{ans_pow}}}$"
+    detail = f"指數律：相乘指數相加，相除指數相減。$({n1} + {n2}) - {n3} = {ans_pow}$。"
+    return {"topic": "🔥 歷屆-指數律", "question": q_str, "answer": ans_str, "detail": detail}
+
+def generate_real_exam_polynomial():
+    """還原題型：多項式減法 (參考 Q2)"""
+    # 題目形式：(5x^2 - 2x) - (4 - 3x)
+    a = random.randint(2, 9)
+    b = random.randint(-9, -1) # 讓它是負的，增加去括號難度
+    c = random.randint(1, 9)
+    d = random.randint(-9, -1) # 第二項 x 係數
+    
+    # 建構題目字串 (注意符號處理)
+    poly1 = f"{a}x^2 {b}x" # 簡單處理，若 b 為負會顯示 5x^2 -2x (可接受，或寫更細)
+    poly2 = f"{c} {d}x"
+    
+    q_str = f"計算 $({a}x^2 + ({b}x)) - ({c} + ({d}x))$ 的結果，與下列何者相同？"
+    
+    # 計算結果
+    # x^2 係數: a
+    # x 係數: b - d
+    # 常數: -c
+    coeff_x = b - d
+    coeff_c = -c
+    
+    x_sign = "+" if coeff_x >= 0 else "-"
+    c_sign = "+" if coeff_c >= 0 else "-"
+    
+    ans_str = f"${a}x^2 {x_sign} {abs(coeff_x)}x {c_sign} {abs(coeff_c)}$"
+    detail = f"去括號變號：$({a}x^2 {b}x) - {c} - ({d}x) = {a}x^2 + ({b}-{d})x - {c}$。"
+    return {"topic": "🔥 歷屆-多項式", "question": q_str, "answer": ans_str, "detail": detail}
+
+def generate_real_exam_system_val():
+    """還原題型：聯立方程式求代數值 (參考 Q4)"""
+    # 先決定 x, y 答案 (整數)
+    x = random.randint(-5, 5)
+    y = random.randint(-5, 5)
+    
+    # 生成係數 (故意用一點大數字)
+    a1 = random.randint(10, 40)
+    b1 = random.randint(2, 9)
+    c1 = a1 * x + b1 * y
+    
+    a2 = random.randint(10, 40)
+    b2 = -b1 # 設計讓 y 係數互為相反數，方便消去 (或是隨機)
+    c2 = a2 * x + b2 * y
+    
+    # 題目問 ax + by 的值
+    ask_a = random.randint(1, 3)
+    ask_b = random.randint(1, 3)
+    target_val = ask_a * x + ask_b * y
+    
+    eq1 = f"{a1}x + {b1}y = {c1}"
+    eq2 = f"{a2}x {b2}y = {c2}" # b2 是負數
+    
+    q_str = f"若二元一次聯立方程式 $\\begin{{cases}} {eq1} \\\\ {eq2} \\end{{cases}}$ 的解為 $\\begin{{cases}} x=a \\\\ y=b \\end{{cases}}$，則 ${ask_a}a + {ask_b}b$ 之值為何？"
+    ans_str = f"{target_val}"
+    detail = f"先解聯立得 $x={x}, y={y}$。代入 ${ask_a}({x}) + {ask_b}({y}) = {target_val}$。"
+    return {"topic": "🔥 歷屆-聯立方程式", "question": q_str, "answer": ans_str, "detail": detail}
+
+def generate_real_exam_radicals():
+    """還原題型：根號運算 (參考 Q8)"""
+    # 題目形式：(2sqrt(3) + sqrt(6)) * sqrt(2)
+    # 設計構造： (a sqrt(b) + sqrt(c)) * sqrt(d)
+    # 讓 c * d = b * k^2 (可以化簡)
+    
+    d = random.choice([2, 3, 5])
+    b = random.choice([2, 3, 5])
+    if b == d: b = 7 # 避免過度重複
+    
+    a = random.randint(2, 4)
+    # 讓 c*d 是一個完全平方數的倍數，例如 c=6, d=2 -> 12 -> 2sqrt(3)
+    # 或者簡單一點，隨機生成，最後讓答案保留根號
+    c = b * d * random.choice([1, 4]) # 這樣 c*d 會包含 d^2
+    # 修正邏輯：隨機出題，解析寫清楚化簡過程
+    
+    c = random.choice([6, 10, 15])
+    d = random.choice([2, 3, 5])
+    
+    q_str = f"計算 $({a}\\sqrt{{{b}}} + \\sqrt{{{c}}}) \\times \\sqrt{{{d}}}$ 的結果。"
+    
+    # 答案計算: a*sqrt(bd) + sqrt(cd)
+    term1_inner = b * d
+    term2_inner = c * d
+    
+    # 簡單化簡 function
+    def simplify_sqrt(val):
+        root = 1
+        for i in range(2, int(math.sqrt(val)) + 1):
+            while val % (i * i) == 0:
+                root *= i
+                val //= (i * i)
+        return root, val
+
+    c1, r1 = simplify_sqrt(term1_inner)
+    c2, r2 = simplify_sqrt(term2_inner)
+    
+    # 合併係數 a
+    total_c1 = a * c1
+    
+    # 檢查根號內是否相同，可合併
+    if r1 == r2:
+        ans_str = f"${total_c1 + c2}\\sqrt{{{r1}}}$"
+    else:
+        term1 = f"{total_c1}\\sqrt{{{r1}}}" if r1 > 1 else f"{total_c1}"
+        term2 = f"{c2}\\sqrt{{{r2}}}" if r2 > 1 else f"{c2}"
+        if c2 == 1 and r2 > 1: term2 = f"\\sqrt{{{r2}}}" # 係數1不寫
+        ans_str = f"${term1} + {term2}$"
+
+    detail = f"分配律：${a}\\sqrt{{{b}}}\\times\\sqrt{{{d}}} + \\sqrt{{{c}}}\\times\\sqrt{{{d}}} = {a}\\sqrt{{{term1_inner}}} + \\sqrt{{{term2_inner}}}$，再化簡。"
+    return {"topic": "🔥 歷屆-根號運算", "question": q_str, "answer": ans_str, "detail": detail}
+
+def generate_real_exam_quadratic_shift():
+    """還原題型：二次函數平移 (參考 Q21)"""
+    # 題目：y = -(x+h)^2 + k 向右/左平移
+    h = random.randint(-9, 9)
+    k = random.randint(-10, 10)
+    a = -1 # 參考題目開口向下
+    
+    shift = random.randint(2, 10)
+    direction = random.choice(["右", "左"])
+    
+    h_sign = "+" if h >= 0 else "-"
+    org_eq = f"y = - (x {h_sign} {abs(h)})^2 + {k}"
+    
+    q_str = f"座標平面上有二次函數 ${org_eq}$ 的圖形，將此圖形向{direction}平移 {shift} 單位。求新圖形的頂點座標？"
+    
+    # 原頂點 (-h, k)
+    org_v_x = -h
+    org_v_y = k
+    
+    if direction == "右":
+        new_v_x = org_v_x + shift
+    else:
+        new_v_x = org_v_x - shift
+        
+    ans_str = f"$({new_v_x}, {org_v_y})$"
+    detail = f"原頂點為 $({org_v_x}, {org_v_y})$。向{direction}移 {shift} 單位 $\\rightarrow$ x 座標{'+' if direction=='右' else '-'} {shift}。"
+    return {"topic": "🔥 歷屆-二次函數平移", "question": q_str, "answer": ans_str, "detail": detail}
+
+# ==========================================
+# Part 3: 進階生活應用 (Advanced Scenario)
 # ==========================================
 
 def generate_advanced_inequality():
-    """進階-生活應用(不等式)：隨機選擇不同場景"""
-    scenario = random.choice(['ticket', 'mobile_plan', 'saving_goal'])
-    
+    """進階-生活應用(不等式)"""
+    scenario = random.choice(['ticket', 'mobile_plan'])
     if scenario == 'ticket':
-        # 情境 A: 門票優惠 (原版)
         price = random.choice([100, 200, 250, 300, 500])
         group_limit = random.choice([20, 30, 40, 50])
         discount_off = random.choice([10, 20, 30]) 
         discount_rate = (100 - discount_off) / 100
         threshold = math.ceil(group_limit * discount_rate)
-        
         q_str = (f"遊樂園門票每張 {price} 元，{group_limit} 人以上(含)團體票打 {10-discount_off//10} 折。"
                  f"若團體不足 {group_limit} 人，人數至少多少時，直接買 {group_limit} 張團體票反而划算？")
         ans_str = f"{threshold} 人"
         detail = f"設人數 x。$x \\times {price} > {group_limit} \\times {price} \\times {discount_rate}$。"
-
-    elif scenario == 'mobile_plan':
-        # 情境 B: 電信資費比較
-        # 方案 A: 月租高，通話費低； 方案 B: 月租低，通話費高
+    else:
         base_a = random.randint(300, 600)
         rate_a = random.randint(2, 4)
         base_b = random.randint(100, 200)
         rate_b = random.randint(6, 9)
-        
-        # 臨界點： base_a + rate_a * x < base_b + rate_b * x
-        # base_a - base_b < (rate_b - rate_a) * x
         diff_base = base_a - base_b
         diff_rate = rate_b - rate_a
         threshold = math.ceil(diff_base / diff_rate)
-        
         q_str = (f"電信方案 A 月租費 {base_a} 元，每分鐘通話 {rate_a} 元；"
                  f"方案 B 月租費 {base_b} 元，每分鐘通話 {rate_b} 元。"
                  f"當每月通話時間超過多少分鐘時，選擇方案 A 會比較划算？")
         ans_str = f"{threshold} 分鐘"
         detail = f"設通話 x 分鐘。${base_a} + {rate_a}x < {base_b} + {rate_b}x$，移項解 x。"
-
-    else:
-        # 情境 C: 存錢買東西
-        current_money = random.randint(1000, 5000)
-        saving_per_week = random.randint(200, 500)
-        target_price = random.randint(10000, 20000)
-        
-        # current + saving * x >= target
-        needed = target_price - current_money
-        weeks = math.ceil(needed / saving_per_week)
-        
-        q_str = (f"小明想買一台 {target_price} 元的筆電，他現在有 {current_money} 元，"
-                 f"並計畫每週存 {saving_per_week} 元。至少需要幾週後他的存款才足夠買筆電？")
-        ans_str = f"{weeks} 週"
-        detail = f"設 x 週後。${current_money} + {saving_per_week}x \\ge {target_price}$。"
-
-    return {"topic": "🔥 進階-不等式應用", "question": q_str, "answer": ans_str, "detail": detail}
+    return {"topic": "進階-不等式應用", "question": q_str, "answer": ans_str, "detail": detail}
 
 def generate_advanced_sequence():
-    """進階-規律探索(數列)：隨機選擇不同場景"""
-    scenario = random.choice(['matchstick', 'auditorium', 'divisibility'])
-
-    if scenario == 'matchstick':
-        # 情境 A: 圖形規律 (火柴棒)
-        shape = random.choice(['正方形', '正三角形', '正六邊形'])
-        if shape == '正方形': a1, d = 4, 3
-        elif shape == '正三角形': a1, d = 3, 2
-        else: a1, d = 6, 5
-        n = random.randint(10, 50)
-        
-        q_str = (f"用火柴棒排連鎖{shape}，排1個需{a1}根，排2個需{a1+d}根... "
-                 f"請問排 {n} 個連鎖{shape}共需幾根火柴棒？")
-        ans_val = a1 + (n - 1) * d
-        ans_str = f"{ans_val} 根"
-        detail = f"等差數列首項 {a1}，公差 {d}。公式 $a_n = a_1 + (n-1)d$。"
-
-    elif scenario == 'auditorium':
-        # 情境 B: 禮堂座位 (座位數遞增)
-        a1 = random.randint(15, 30) # 第一排座位
-        d = random.randint(2, 4)    # 每排增加
-        row = random.randint(10, 20) # 問第幾排
-        
-        q_str = (f"表演廳座位區，第一排有 {a1} 個座位，之後每一排都比前一排多 {d} 個座位。"
-                 f"請問第 {row} 排有多少個座位？")
-        ans_val = a1 + (row - 1) * d
-        ans_str = f"{ans_val} 個"
-        detail = f"首項 {a1}，公差 {d}，求第 {row} 項。"
-
-    else:
-        # 情境 C: 倍數計數 (1~n 之間某數的倍數)
-        limit = random.randint(100, 500)
-        divisor = random.choice([3, 4, 6, 7, 8])
-        remainder = random.randint(1, divisor-1)
-        
-        q_str = (f"在 1 到 {limit} 的整數中，除以 {divisor} 餘 {remainder} 的數共有幾個？")
-        # 數列: remainder, remainder+divisor, ... <= limit
-        # an = remainder + (n-1)*divisor <= limit
-        # (n-1)*divisor <= limit - remainder
-        # n-1 <= (limit - remainder) // divisor
-        count = (limit - remainder) // divisor + 1
-        ans_str = f"{count} 個"
-        detail = f"找出數列：{remainder}, {remainder+divisor}, {remainder+2*divisor}... 利用通項公式逆推項數。"
-
-    return {"topic": "🔥 進階-數列規律", "question": q_str, "answer": ans_str, "detail": detail}
-
-def generate_advanced_quadratics():
-    """進階-二次函數應用：隨機選擇不同場景"""
-    scenario = random.choice(['projectile', 'area_max', 'revenue_max'])
-
-    if scenario == 'projectile':
-        # 情境 A: 拋物線高度 (原版)
-        t_vertex = random.randint(2, 5)
-        max_h = random.randint(20, 80)
-        a = -5 # 重力近似
-        b = -2 * a * t_vertex
-        c = a * t_vertex**2 + max_h
-        
-        q_str = (f"球被拋出後高度 $h$ 與時間 $t$ 關係為 $h(t) = {a}t^2 + {b}t + {c}$。"
-                 f"請問第幾秒達到最高點？最高高度為多少？")
-        ans_str = f"{t_vertex} 秒，{max_h} 公尺"
-        detail = "配方法化為頂點式 $y = a(x-h)^2 + k$，頂點即為極值。"
-
-    elif scenario == 'area_max':
-        # 情境 B: 圍籬笆面積最大化
-        # 周長固定，求矩形最大面積
-        # 周長 P = 2(L+W), L+W = P/2 = S. Area = L*W = L*(S-L)
-        s_half = random.randint(10, 40) * 2 # 半周長，偶數好算
-        perimeter = s_half * 2
-        # Max area when L = W = s_half / 2
-        side = s_half // 2
-        max_area = side * side
-        
-        q_str = (f"農夫想用長 {perimeter} 公尺的籬笆圍成一個長方形菜園(四邊都圍)。"
-                 f"請問圍出的最大面積是多少平方公尺？")
-        ans_str = f"{max_area} $m^2$"
-        detail = f"設長 x，寬 {s_half}-x。面積 $A(x) = x({s_half}-x)$，配方求最大值(正方形時)。"
-
-    else:
-        # 情境 C: 定價與營收
-        # 原價 p0, 銷量 q0。每漲價 x 元，銷量少 y 個。
-        p0 = random.randint(50, 100)
-        q0 = random.randint(200, 400)
-        delta_p = 1 # 漲 1 元
-        delta_q = random.randint(2, 5) # 少 delta_q 個
-        
-        # R(x) = (p0 + x)(q0 - delta_q * x)
-        # 頂點 x = (q0/delta_q - p0) / 2
-        # 為了讓數字漂亮，我們設計一下
-        # 讓 (q0/delta_q - p0) 是偶數
-        
-        # 重新生成好算的數字
-        delta_q = 2
-        p0 = 100
-        x_target = random.randint(10, 30) # 預設最佳漲價金額
-        # 為了讓頂點在 x_target，我們回推 q0
-        # x_vertex = (q0/2 - 100) / 2 = x_target -> q0/2 - 100 = 2*x_target -> q0 = 2*(2*x_target + 100)
-        q0 = 2 * (2 * x_target + 100)
-        
-        max_rev = (p0 + x_target) * (q0 - delta_q * x_target)
-        
-        q_str = (f"某商品單價 {p0} 元時，可賣出 {q0} 個。若單價每調漲 1 元，銷量會減少 {delta_q} 個。"
-                 f"請問定價應調漲多少元，才能獲得最大總營收？(營收=單價x銷量)")
-        ans_str = f"{x_target} 元"
-        detail = f"設調漲 x 元。營收 $R(x) = ({p0}+x)({q0}-{delta_q}x)$，展開配方求極值。"
-
-    return {"topic": "🔥 進階-二次函數極值", "question": q_str, "answer": ans_str, "detail": detail}
-
-def generate_advanced_system():
-    """進階-聯立方程式應用：隨機選擇不同場景"""
-    scenario = random.choice(['profit', 'age', 'speed'])
-
-    if scenario == 'profit':
-        # 情境 A: 買賣利潤 (原版)
-        cost_a = random.randint(20, 50) * 10
-        cost_b = random.randint(20, 50) * 10
-        count_a = random.randint(5, 15)
-        count_b = random.randint(5, 15)
-        total_items = count_a + count_b
-        # 售價
-        sell_a = int(cost_a * 1.3)
-        sell_b = int(cost_b * 1.2)
-        total_rev = sell_a * count_a + sell_b * count_b
-        
-        q_str = (f"商店買進A、B兩商品共{total_items}件。A定價{sell_a}元，B定價{sell_b}元。"
-                 f"全部賣完後總營收{total_rev}元。請問A商品有幾件？")
-        ans_str = f"{count_a} 件"
-        detail = f"設A有x件，B有({total_items}-x)件。${sell_a}x + {sell_b}({total_items}-x) = {total_rev}$。"
-
-    elif scenario == 'age':
-        # 情境 B: 父子年齡問題
-        # 設現在子 x，父 y。 y = k1 * x + b1.  (y+n) = k2 * (x+n)
-        son_now = random.randint(10, 15)
-        diff = random.randint(20, 30)
-        father_now = son_now + diff
-        
-        # 找一個未來/過去的時間點 n，使倍數是整數
-        # 簡單設計：現在父是子 k 倍 (不一定整數)，n年後是 2 倍
-        # (father_now + n) = 2 * (son_now + n)
-        # father + n = 2son + 2n -> n = father - 2son
-        n = father_now - 2 * son_now
-        
-        if n > 0:
-            time_str = f"{n} 年後"
-            rel_str = "2 倍"
-        elif n < 0:
-            time_str = f"{abs(n)} 年前"
-            rel_str = "2 倍"
-        else:
-            # n=0 特殊狀況，改別的題目邏輯
-            n = 5
-            father_future = father_now + n
-            son_future = son_now + n
-            # 這裡改成問和差
-            sum_age = father_now + son_now
-            q_str = f"父子現在年齡和為 {sum_age} 歲。{n} 年後，父親年齡是兒子的 {father_future/son_future:.1f} 倍(非整數)。求父現年？"
-            # 避免小數倍數太難，我們直接回傳簡單版
-            q_str = f"父親比兒子大 {diff} 歲，{n} 年後父親年齡是兒子的 {(father_now+n)//(son_now+n)} 倍。求兒子現年？"
-            # 重新計算倍數確保整數
-            son_now = 10
-            father_now = 40 # diff 30
-            n = 20 # son 30, father 60 (2倍)
-            diff = 30
-            
-        q_str = f"父親比兒子大 {diff} 歲。{abs(n)} 年後，父親年齡剛好是兒子的 2 倍。請問兒子現在幾歲？"
-        ans_str = f"{son_now} 歲"
-        detail = f"設子 x 歲，父 (x+{diff}) 歲。方程式：$(x+{diff}) + {n} = 2(x + {n})$。"
-
-    else:
-        # 情境 C: 順流逆流 (速率問題)
-        # 船速 v_boat, 水速 v_water
-        v_water = random.randint(2, 5)
-        v_boat = random.randint(15, 25)
-        dist = random.randint(30, 60) * 2 # 確保距離夠長
-        
-        # 順流速度 = v_boat + v_water
-        # 逆流速度 = v_boat - v_water
-        down_speed = v_boat + v_water
-        up_speed = v_boat - v_water
-        
-        q_str = (f"一艘船在河中行駛，順流而下時速率為每小時 {down_speed} 公里，"
-                 f"逆流而上時速率為每小時 {up_speed} 公里。請問水流速率為多少？")
-        ans_str = f"{v_water} km/hr"
-        detail = "設船速 x，水速 y。則 $\\begin{cases} x+y = " + str(down_speed) + " \\\\ x-y = " + str(up_speed) + " \\end{cases}$，解聯立求 y。"
-
-    return {"topic": "🔥 進階-聯立方程式應用", "question": q_str, "answer": ans_str, "detail": detail}
-
+    """進階-規律探索(數列)"""
+    # 火柴棒問題
+    shape = random.choice(['正方形', '正三角形', '正六邊形'])
+    if shape == '正方形': a1, d = 4, 3
+    elif shape == '正三角形': a1, d = 3, 2
+    else: a1, d = 6, 5
+    n = random.randint(10, 50)
+    q_str = (f"用火柴棒排連鎖{shape}，排1個需{a1}根，排2個需{a1+d}根... "
+             f"請問排 {n} 個連鎖{shape}共需幾根火柴棒？")
+    ans_val = a1 + (n - 1) * d
+    ans_str = f"{ans_val} 根"
+    detail = f"等差數列首項 {a1}，公差 {d}。公式 $a_n = a_1 + (n-1)d$。"
+    return {"topic": "進階-數列規律", "question": q_str, "answer": ans_str, "detail": detail}
 
 # ==========================================
-# Part 3: 題型策略地圖 (Updated Mapping)
+# Part 4: 題型策略地圖
 # ==========================================
 
 TOPIC_MAPPING = {
     # 基礎區
-    "基礎 - 數與量 (運算/科學記號)": generate_number_basic,
-    "基礎 - 代數 (方程式/不等式)": generate_linear_algebra_basic,
-    "基礎 - 幾何 (角度/邊長)": generate_geometry_basic,
-    # 進階區 (現在每個都會隨機出不同情境)
-    "🔥 進階 - 生活應用 (不等式)": generate_advanced_inequality,
-    "🔥 進階 - 規律探索 (數列)": generate_advanced_sequence,
-    "🔥 進階 - 二次函數 (極值應用)": generate_advanced_quadratics,
-    "🔥 進階 - 商業/速率 (聯立應用)": generate_advanced_system
+    "基礎 - 數與量": generate_number_basic,
+    "基礎 - 代數": generate_linear_algebra_basic,
+    "基礎 - 幾何": generate_geometry_basic,
+    # 歷屆改編區 (New!)
+    "🔥 歷屆 - 指數律運算": generate_real_exam_exponents,
+    "🔥 歷屆 - 多項式加減": generate_real_exam_polynomial,
+    "🔥 歷屆 - 聯立方程式求值": generate_real_exam_system_val,
+    "🔥 歷屆 - 根號運算": generate_real_exam_radicals,
+    "🔥 歷屆 - 二次函數平移": generate_real_exam_quadratic_shift,
+    # 進階應用區
+    "進階 - 不等式應用": generate_advanced_inequality,
+    "進階 - 數列規律": generate_advanced_sequence,
 }
 
 def generate_exam_data(selected_topics, num_questions):
@@ -359,7 +317,7 @@ def generate_exam_data(selected_topics, num_questions):
     return exam_list
 
 # ==========================================
-# Part 4: PDF 匯出功能
+# Part 5: PDF 匯出功能
 # ==========================================
 
 class PDFExport(FPDF):
@@ -395,7 +353,7 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
     pdf.cell(0, 10, full_title, ln=True, align='C')
     pdf.ln(10)
     
-    # 1. 自動生成試題區 (只有當有題目時才生成)
+    # 1. 自動生成試題區
     if exam_data:
         for idx, item in enumerate(exam_data):
             clean_q = item['question'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/').replace('\\times', 'x').replace('\\div', '÷').replace('\\le', '<=').replace('\\ge', '>=')
@@ -403,11 +361,10 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
             
             # 標題縮寫
             topic_show = item['topic']
-            if "🔥" in topic_show:
-                topic_show = "進階"
-            elif "-" in topic_show:
-                topic_show = topic_show.split('-')[1]
-                
+            if "🔥" in topic_show: topic_show = "歷屆改編"
+            elif "進階" in topic_show: topic_show = "素養應用"
+            elif "-" in topic_show: topic_show = topic_show.split('-')[1]
+            
             question_text = f"Q{idx+1}. [{topic_show}] {clean_q}"
             pdf.multi_cell(0, 10, question_text)
             
@@ -424,57 +381,45 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
                 else: pdf.set_font("Arial", '', 14)
                 pdf.ln(5)
     else:
-        # 若沒有隨機題目，顯示一個簡單提示
         if not uploaded_images:
             pdf.cell(0, 10, "本試卷無隨機題目。", ln=True)
 
-    # 2. 圖片試題區 (新增功能)
+    # 2. 圖片試題區
     if uploaded_images:
-        pdf.add_page() # 新起一頁
-        # 使用粗體或大標題
+        pdf.add_page()
         if font_ready: pdf.set_font("TaipeiSans", '', 16)
         pdf.cell(0, 10, "--- 圖片試題區 ---", ln=True, align='C')
         pdf.ln(5)
-        
         for img_file in uploaded_images:
             try:
-                # 在雲端環境中，fpdf 需要實體檔案路徑，因此使用 tempfile
-                img_file.seek(0) # 確保從頭讀取
-                
-                # 判斷副檔名
+                img_file.seek(0)
                 file_ext = img_file.name.split('.')[-1].lower()
-                if file_ext not in ['jpg', 'jpeg', 'png']:
-                    file_ext = 'png' # 預設
-
+                if file_ext not in ['jpg', 'jpeg', 'png']: file_ext = 'png'
                 with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
                     tmp.write(img_file.read())
                     tmp_path = tmp.name
-                
-                # 計算適合的寬度，A4 寬度約 210mm，左右留邊
-                # 這裡設定最大寬度 170mm，高度自動保持比例
                 pdf.image(tmp_path, w=170)
-                pdf.ln(10) # 圖片間的間隔
-                
-                # 刪除暫存檔
+                pdf.ln(10)
                 os.remove(tmp_path)
             except Exception as e:
                 pdf.set_font("Arial", '', 10)
-                pdf.cell(0, 10, f"Error displaying image: {e}", ln=True)
+                pdf.cell(0, 10, f"Error: {e}", ln=True)
 
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# Part 5: Streamlit UI
+# Part 6: Streamlit UI
 # ==========================================
 
 def main():
     st.title("📝 全方位國中數學出題系統 (Pro版)")
-    st.markdown("### 包含基礎觀念與 **🔥 歷屆試題改編 (多情境版)**")
+    st.markdown("### 包含基礎觀念與 **🔥 歷屆試題還原** (上傳圖片即還原)")
     st.markdown("---")
 
     all_topics = list(TOPIC_MAPPING.keys())
     if "selected_topics" not in st.session_state:
-        st.session_state.selected_topics = all_topics[:4] # 預設選一些基礎跟進階
+        # 預設選一些基礎跟歷屆改編
+        st.session_state.selected_topics = [t for t in all_topics if "歷屆" in t][:3]
 
     def toggle_all():
         if st.session_state.use_all_topics:
@@ -486,7 +431,6 @@ def main():
         st.header("⚙️ 試卷設定")
         custom_title = st.text_input("試卷標題", value="會考衝刺練習")
         
-        # 圖片上傳區 (新增)
         st.subheader("📸 上傳考題圖片")
         uploaded_files = st.file_uploader(
             "上傳圖片 (支援 JPG/PNG，可多張)", 
@@ -499,68 +443,43 @@ def main():
         st.divider()
 
         st.checkbox("全選所有單元", key="use_all_topics", on_change=toggle_all)
-        
-        selected_topics = st.multiselect(
-            "選擇單元 (可複選)",
-            options=all_topics,
-            key="selected_topics"
-        )
-        
+        selected_topics = st.multiselect("選擇單元 (可複選)", options=all_topics, key="selected_topics")
         num_questions = st.slider("題目數量", 5, 50, 10)
         generate_btn = st.button("🚀 建立新考卷", type="primary")
         
-        st.info("🔥 PRO版特色：\n進階題型內建多種情境，並支援**圖片考題上傳**，直接整合進 PDF 考卷！")
+        st.info("🔥 **新功能**：已將您的圖片試題轉化為可隨機變化的「歷屆改編」題型，勾選後即可無限生成！")
 
     if "exam_data" not in st.session_state:
         st.session_state["exam_data"] = []
     
     if generate_btn:
-        # 修改邏輯：只要選了單元 OR 上傳了圖片，就可以生成
         if not selected_topics and not uploaded_files:
             st.error("請至少選擇一個單元或上傳圖片！")
         else:
             if selected_topics:
-                with st.spinner("正在生成多變素養題..."):
+                with st.spinner("正在生成歷屆改編題..."):
                     st.session_state["exam_data"] = generate_exam_data(selected_topics, num_questions)
             else:
-                # 沒選單元但有圖片 -> 清空隨機題數據，以免殘留
                 st.session_state["exam_data"] = []
             
-            # 成功訊息
-            msg = "成功生成！"
-            if st.session_state["exam_data"]:
-                 msg += f" (隨機題: {len(st.session_state['exam_data'])} 題)"
-            if uploaded_files:
-                 msg += f" (圖片題: {len(uploaded_files)} 張)"
-            st.success(msg)
+            st.success("成功生成！")
 
-    # 修改顯示條件：只要有隨機題 OR 有上傳圖片，就顯示預覽/下載區
     if st.session_state["exam_data"] or uploaded_files:
         st.subheader(f"👀 {custom_title} - 試題預覽")
-        
         if st.session_state["exam_data"]:
             for i, q in enumerate(st.session_state["exam_data"][:3]):
                 with st.expander(f"Q{i+1} [{q['topic']}]"):
                     st.write(f"**題目**： {q['question']}")
                     st.write(f"**答案**： {q['answer']}")
                     st.caption(f"解析： {q['detail']}")
-            if len(st.session_state["exam_data"]) > 3:
-                st.info(f"... 還有 {len(st.session_state['exam_data'])-3} 題，請下載 PDF 查看完整版。")
-        else:
-            st.info("本次未選擇隨機題目單元，僅包含上傳之圖片考題。")
-            
-        if uploaded_files:
-            st.success(f"另有 {len(uploaded_files)} 張圖片考題將合併於 PDF 後方。")
-
+        
         st.divider()
         safe_title = custom_title.replace(" ", "_")
         col1, col2 = st.columns(2)
         with col1:
-            # 傳遞 uploaded_files 給 create_pdf
             pdf_student = create_pdf(st.session_state["exam_data"], custom_title, mode="student", uploaded_images=uploaded_files)
             st.download_button("📄 下載學生版", pdf_student, f"{safe_title}_學生版.pdf", "application/pdf")
         with col2:
-            # 傳遞 uploaded_files 給 create_pdf (家長版也附上題目圖，方便對照)
             pdf_parent = create_pdf(st.session_state["exam_data"], custom_title, mode="parent", uploaded_images=uploaded_files)
             st.download_button("👨‍🏫 下載家長版", pdf_parent, f"{safe_title}_解答版.pdf", "application/pdf")
 
