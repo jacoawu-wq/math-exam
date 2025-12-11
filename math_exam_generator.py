@@ -373,6 +373,7 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
             else:
                 pdf.set_text_color(255, 0, 0)
                 pdf.multi_cell(0, 8, f"Ans: {clean_a}")
+                # [Fix] 修正錯誤：使用 set_font_size 而不是 set_font(size=10)
                 pdf.set_font_size(10)
                 pdf.set_text_color(100, 100, 100)
                 pdf.multi_cell(0, 8, f"解析: {item['detail']}")
@@ -384,12 +385,12 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
         if not uploaded_images:
             pdf.cell(0, 10, "本試卷無隨機題目。", ln=True)
 
-    # 2. 圖片試題區
+    # 2. 圖片試題區 (優化：每張圖一頁，滿版顯示)
     if uploaded_images:
         pdf.add_page()
         if font_ready: pdf.set_font("TaipeiSans", '', 16)
-        pdf.cell(0, 10, "--- 圖片試題區 ---", ln=True, align='C')
-        pdf.ln(5)
+        pdf.cell(0, 10, "--- 以下為上傳之圖片試題 ---", ln=True, align='C')
+        
         for img_file in uploaded_images:
             try:
                 img_file.seek(0)
@@ -398,8 +399,12 @@ def create_pdf(exam_data, custom_title, mode="student", uploaded_images=None):
                 with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
                     tmp.write(img_file.read())
                     tmp_path = tmp.name
-                pdf.image(tmp_path, w=170)
-                pdf.ln(10)
+                
+                # [Improvement] 新增一頁，並將圖片放大至滿版 (寬 190mm，預留邊距)
+                pdf.add_page()
+                # A4 寬 210mm，高 297mm。w=190 代表左右各留 10mm 邊距
+                pdf.image(tmp_path, x=10, y=10, w=190)
+                
                 os.remove(tmp_path)
             except Exception as e:
                 pdf.set_font("Arial", '', 10)
