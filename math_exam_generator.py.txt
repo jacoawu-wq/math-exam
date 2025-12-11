@@ -1,0 +1,306 @@
+import streamlit as st
+import random
+from fpdf import FPDF
+import os
+
+# 1. 設定頁面配置 (必須放在第一行)
+st.set_page_config(page_title="數學自動出題系統", layout="wide", page_icon="📝")
+
+# ==========================================
+# Part 1: 題目生成核心邏輯 (The Generator)
+# ==========================================
+
+def generate_algebra():
+    """生成代數運算題目: (ax + b)(cx + d) 或 (x+a)^2"""
+    # 隨機決定是平方公式還是乘法分配律
+    t_type = random.choice(['square', 'multiply'])
+    
+    if t_type == 'square':
+        # (x + a)^2
+        a = random.randint(-15, 15)
+        if a == 0: a = 1
+        sign = "+" if a > 0 else "-"
+        # 題目
+        q_str = f"展開： $(x {sign} {abs(a)})^2$"
+        # 答案: x^2 + 2ax + a^2
+        ans_str = f"$x^2 {('+' if 2*a > 0 else '-')} {abs(2*a)}x + {a**2}$"
+        
+    else:
+        # (x+a)(x+b)
+        a = random.randint(-12, 12)
+        b = random.randint(-12, 12)
+        if a == 0: a = 1
+        if b == 0: b = 1
+        
+        sign_a = "+" if a > 0 else "-"
+        sign_b = "+" if b > 0 else "-"
+        # 題目
+        q_str = f"展開： $(x {sign_a} {abs(a)})(x {sign_b} {abs(b)})$"
+        # 答案計算
+        mid = a + b
+        const = a * b
+        mid_sign = "+" if mid >= 0 else "-"
+        const_sign = "+" if const >= 0 else "-"
+        ans_str = f"$x^2 {mid_sign} {abs(mid)}x {const_sign} {abs(const)}$"
+
+    return {
+        "topic": "代數運算",
+        "question": q_str,
+        "answer": ans_str,
+        "detail": "利用乘法公式或分配律展開整理。"
+    }
+
+def generate_linear_eq():
+    """生成一元一次方程式: ax + b = c"""
+    # 逆向工程：先決定答案 x，再算出常數 c，確保答案是整數
+    x = random.randint(-20, 20)
+    a = random.choice([k for k in range(-9, 10) if k != 0])
+    b = random.randint(-50, 50)
+    c = a * x + b
+    
+    b_sign = "+" if b >= 0 else "-"
+    q_str = f"解方程式： ${a}x {b_sign} {abs(b)} = {c}$"
+    ans_str = f"$x = {x}$"
+    
+    return {
+        "topic": "方程式解題",
+        "question": q_str,
+        "answer": ans_str,
+        "detail": f"移項法則：先將常數項移至右邊，再除以 x 的係數。\n{a}x = {c} - ({b})  =>  {a}x = {c-b}  =>  x = {x}"
+    }
+
+def generate_geometry():
+    """生成幾何圖形題目"""
+    g_type = random.choice(['rect', 'tri'])
+    
+    if g_type == 'rect':
+        w = random.randint(5, 30)
+        h = random.randint(5, 30)
+        q_str = f"長方形長為 {w} cm，寬為 {h} cm，求面積。"
+        ans_str = f"{w * h} $cm^2$"
+        detail = "長方形面積 = 長 × 寬"
+    else:
+        base = random.randint(6, 24)
+        height = random.randrange(2, 20, 2) # 確保高是偶數，面積才不會有小數點
+        q_str = f"三角形底為 {base}，高為 {height}，求面積。"
+        ans_str = f"{int(base * height / 2)}"
+        detail = "三角形面積 = (底 × 高) / 2"
+        
+    return {
+        "topic": "幾何圖形",
+        "question": q_str,
+        "answer": ans_str,
+        "detail": detail
+    }
+
+def generate_probability():
+    """生成機率題目"""
+    p_type = random.choice(['dice', 'balls'])
+    
+    if p_type == 'dice':
+        target = random.randint(1, 6)
+        q_str = f"投擲一顆公正骰子，出現點數大於 {target} 的機率為何？"
+        success = 6 - target
+        if success == 0: ans_str = "0"
+        elif success == 6: ans_str = "1"
+        else: ans_str = f"$\\frac{{{success}}}{{6}}$"
+        detail = f"骰子有 6 面。大於 {target} 的點數有：{list(range(target+1, 7)) if target<6 else '無'}，共 {success} 個情形。"
+        
+    else:
+        red = random.randint(3, 8)
+        blue = random.randint(3, 8)
+        total = red + blue
+        q_str = f"袋中有 {red} 顆紅球，{blue} 顆藍球，隨機取出一球為紅球的機率？"
+        ans_str = f"$\\frac{{{red}}}{{{total}}}$"
+        detail = f"總球數 = {red} + {blue} = {total}。紅球有 {red} 顆，故機率為 {red}/{total}。"
+
+    return {
+        "topic": "機率與統計",
+        "question": q_str,
+        "answer": ans_str,
+        "detail": detail
+    }
+
+# Dictionary 策略：將單元名稱對應到函數
+TOPIC_MAPPING = {
+    "代數運算": generate_algebra,
+    "方程式解題": generate_linear_eq,
+    "幾何圖形": generate_geometry,
+    "機率與統計": generate_probability
+}
+
+def generate_exam_data(selected_topics, num_questions):
+    """根據使用者選項產生題庫"""
+    if not selected_topics: return []
+    exam_list = []
+    for _ in range(num_questions):
+        # 1. 隨機選一個單元
+        topic_name = random.choice(selected_topics)
+        # 2. 執行對應函數
+        generator_func = TOPIC_MAPPING[topic_name]
+        exam_list.append(generator_func())
+    return exam_list
+
+# ==========================================
+# Part 2: PDF 匯出功能 (The Exporter)
+# ==========================================
+
+class PDFExport(FPDF):
+    def footer(self):
+        self.set_y(-15)
+        # 頁尾字體處理
+        try:
+            self.set_font("TaipeiSans", '', 10)
+        except:
+            self.set_font("Arial", 'I', 8)
+        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+def create_pdf(exam_data, custom_title, mode="student"):
+    pdf = PDFExport()
+    pdf.add_page()
+    
+    # --- 關鍵：字型載入 ---
+    # 這是為了讓 PDF 能顯示中文，必須要有 .ttf 檔案
+    font_path = 'TaipeiSansTCBeta-Regular.ttf'
+    font_ready = False
+    
+    if os.path.exists(font_path):
+        try:
+            pdf.add_font('TaipeiSans', '', font_path, uni=True)
+            pdf.set_font("TaipeiSans", '', 14)
+            font_ready = True
+        except Exception as e:
+            print(f"字型載入失敗: {e}")
+    
+    # 若無中文字型，顯示警告
+    if not font_ready:
+        pdf.set_font("Arial", '', 14)
+        pdf.cell(0, 10, "Error: Chinese font not found (TaipeiSansTCBeta-Regular.ttf)", ln=True)
+        pdf.ln(10)
+
+    # 標題
+    suffix = "(學生卷)" if mode == "student" else "(解答卷)"
+    full_title = f"{custom_title} {suffix}"
+    pdf.cell(0, 10, full_title, ln=True, align='C')
+    pdf.ln(10)
+    
+    # 試題內容
+    for idx, item in enumerate(exam_data):
+        # 清除 LaTeX 符號以便 PDF 顯示純文字
+        clean_q = item['question'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/')
+        clean_a = item['answer'].replace('$', '').replace('\\frac', '').replace('{', '').replace('}', '/')
+        
+        question_text = f"Q{idx+1}. [{item['topic']}] {clean_q}"
+        pdf.multi_cell(0, 10, question_text)
+        
+        if mode == "student":
+            # 學生版：留白 25mm 供計算
+            pdf.ln(25) 
+        else:
+            # 家長版：顯示答案與解析
+            pdf.set_text_color(255, 0, 0) # 紅色
+            pdf.multi_cell(0, 8, f"Ans: {clean_a}")
+            
+            pdf.set_font(size=10)
+            pdf.set_text_color(100, 100, 100) # 灰色
+            pdf.multi_cell(0, 8, f"解析: {item['detail']}")
+            
+            # 恢復設定
+            pdf.set_text_color(0, 0, 0)
+            if font_ready: pdf.set_font("TaipeiSans", '', 14)
+            else: pdf.set_font("Arial", '', 14)
+            pdf.ln(5)
+
+    return pdf.output(dest='S').encode('latin-1')
+
+# ==========================================
+# Part 3: Streamlit UI 介面
+# ==========================================
+
+def main():
+    st.title("📝 國中數學出題系統 (雲端版)")
+    st.markdown("歡迎使用！選好單元後，按下按鈕即可生成**無限版本**的練習卷。")
+    st.markdown("---")
+
+    # ----- 側邊欄設定 -----
+    with st.sidebar:
+        st.header("⚙️ 試卷設定")
+        
+        # 1. 自訂標題 (方便家長區分不同作業)
+        custom_title = st.text_input("試卷標題", value="數學自我評量")
+        
+        # 2. 選擇單元
+        selected_topics = st.multiselect(
+            "選擇單元 (可複選)",
+            options=list(TOPIC_MAPPING.keys()),
+            default=["代數運算", "方程式解題"]
+        )
+        
+        # 3. 題目數量
+        num_questions = st.slider("題目數量", 5, 50, 10)
+        
+        # 4. 生成按鈕
+        generate_btn = st.button("🚀 建立新考卷", type="primary")
+        
+        st.info("提示：每次點擊按鈕，題目數值都會隨機改變，不會重複！")
+
+    # ----- 主流程 -----
+    
+    # 初始化 session state (儲存題目用)
+    if "exam_data" not in st.session_state:
+        st.session_state["exam_data"] = []
+    
+    # 按下按鈕後生成
+    if generate_btn:
+        if not selected_topics:
+            st.error("請至少選擇一個單元！")
+        else:
+            with st.spinner("題目運算中..."):
+                st.session_state["exam_data"] = generate_exam_data(selected_topics, num_questions)
+            st.success(f"成功生成 {len(st.session_state['exam_data'])} 題！")
+
+    # ----- 顯示與下載 -----
+    
+    if st.session_state["exam_data"]:
+        # 預覽區
+        st.subheader(f"👀 {custom_title} - 試題預覽")
+        
+        # 只顯示前 3 題
+        for i, q in enumerate(st.session_state["exam_data"][:3]):
+            with st.expander(f"第 {i+1} 題 ({q['topic']})"):
+                st.write(f"**題目**： {q['question']}")
+                st.write(f"**答案**： {q['answer']}")
+                st.caption(f"解析： {q['detail']}")
+        
+        if len(st.session_state["exam_data"]) > 3:
+            st.info(f"... 還有 {len(st.session_state['exam_data'])-3} 題，請下載 PDF 查看完整版。")
+
+        st.divider()
+        
+        # 下載區
+        safe_title = custom_title.replace(" ", "_") # 處理檔名空格
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # 產生學生版
+            pdf_student = create_pdf(st.session_state["exam_data"], custom_title, mode="student")
+            st.download_button(
+                label="📄 下載學生版 (題目卷)",
+                data=pdf_student,
+                file_name=f"{safe_title}_學生版.pdf",
+                mime="application/pdf"
+            )
+            
+        with col2:
+            # 產生家長版
+            pdf_parent = create_pdf(st.session_state["exam_data"], custom_title, mode="parent")
+            st.download_button(
+                label="👨‍🏫 下載家長版 (含解析)",
+                data=pdf_parent,
+                file_name=f"{safe_title}_解答版.pdf",
+                mime="application/pdf"
+            )
+
+if __name__ == "__main__":
+    main()
